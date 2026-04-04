@@ -30,6 +30,30 @@ function showToast(msg) {
   setTimeout(() => t.classList.add("hidden"), 2500);
 }
 
+// ── Safe sendMessage — tangani error koneksi content script ──
+function safeSendToTab(tabId, msg, cb) {
+  try {
+    chrome.tabs.sendMessage(tabId, msg, (res) => {
+      if (chrome.runtime.lastError) {
+        const err = chrome.runtime.lastError.message || "";
+        if (err.includes("Receiving end does not exist") || err.includes("Could not establish")) {
+          cb && cb(null, "no_content_script");
+        } else {
+          cb && cb(null, "error:" + err);
+        }
+        return;
+      }
+      cb && cb(res);
+    });
+  } catch (e) {
+    cb && cb(null, "exception:" + e.message);
+  }
+}
+
+function noContentScriptMsg() {
+  showToast("Extension belum aktif di halaman ini. Buka halaman web lalu coba lagi.");
+}
+
 function updateClock() {
   const now = new Date();
   const wib = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
@@ -126,6 +150,7 @@ function renderEmails() {
   });
 
   chrome.runtime.sendMessage({ type: "GET_NEXT_RESET" }, (res) => {
+    if (chrome.runtime.lastError) return;
     if (res?.scheduledTime) {
       const wib = new Date(new Date(res.scheduledTime).toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
       $("#next-reset").textContent = `Reset: ${wib.toLocaleString("id-ID")}`;
@@ -136,7 +161,8 @@ function renderEmails() {
 $("#btn-scan-email").addEventListener("click", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) return;
-    chrome.tabs.sendMessage(tabs[0].id, { type: "SCAN_EMAILS" }, (res) => {
+    safeSendToTab(tabs[0].id, { type: "SCAN_EMAILS" }, (res, err) => {
+      if (err) { noContentScriptMsg(); return; }
       const emails = res?.emails || [];
       const found = $("#emails-found");
       if (!emails.length) { found.innerHTML = '<p class="empty">Tidak ada email ditemukan.</p>'; return; }
@@ -146,7 +172,10 @@ $("#btn-scan-email").addEventListener("click", () => {
       </div>`).join("");
       found.querySelectorAll("[data-copy]").forEach((btn) =>
         btn.addEventListener("click", () => { navigator.clipboard.writeText(btn.dataset.copy); showToast("Email disalin!"); }));
-      chrome.runtime.sendMessage({ type: "ADD_EMAILS", emails }, () => renderEmails());
+      chrome.runtime.sendMessage({ type: "ADD_EMAILS", emails }, () => {
+        if (chrome.runtime.lastError) {}
+        renderEmails();
+      });
       showToast(`${emails.length} email ditemukan`);
     });
   });
@@ -374,8 +403,9 @@ function renderMediaList() {
       btn.disabled = true;
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs[0]) return;
-        chrome.tabs.sendMessage(tabs[0].id, { type: "REQUEST_DOWNLOAD", key }, () => {});
-        // Wait for the response via chrome.runtime.onMessage
+        safeSendToTab(tabs[0].id, { type: "REQUEST_DOWNLOAD", key }, (res, err) => {
+          if (err) { noContentScriptMsg(); btn.textContent = "⬇ Download ."+ext; btn.disabled = false; }
+        });
       });
     });
   });
@@ -387,7 +417,9 @@ function renderMediaList() {
       btn.textContent = "⏳ Mempersiapkan...";
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs[0]) return;
-        chrome.tabs.sendMessage(tabs[0].id, { type: "REQUEST_DOWNLOAD", blobUrl }, () => {});
+        safeSendToTab(tabs[0].id, { type: "REQUEST_DOWNLOAD", blobUrl }, (res, err) => {
+          if (err) { noContentScriptMsg(); btn.textContent = "⬇ Download"; }
+        });
       });
     });
   });
@@ -401,15 +433,9 @@ function renderMediaList() {
       btn.disabled = true;
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs[0]) return;
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: "REQUEST_DOWNLOAD",
-          directUrl: url,
-          filename: label
-        }, () => {
-          setTimeout(() => {
-            btn.textContent = "⬇ Download";
-            btn.disabled = false;
-          }, 3000);
+        safeSendToTab(tabs[0].id, { type: "REQUEST_DOWNLOAD", directUrl: url, filename: label }, (res, err) => {
+          if (err) noContentScriptMsg();
+          setTimeout(() => { btn.textContent = "⬇ Download"; btn.disabled = false; }, 3000);
         });
       });
     });
@@ -448,10 +474,11 @@ $("#btn-scan-media").addEventListener("click", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) { btn.textContent = "🔍 Scan Media"; btn.disabled = false; return; }
 
-    chrome.tabs.sendMessage(tabs[0].id, { type: "SCAN_MEDIA" }, (res) => {
+    safeSendToTab(tabs[0].id, { type: "SCAN_MEDIA" }, (res, err) => {
       btn.textContent = "🔍 Scan Media";
       btn.disabled = false;
 
+      if (err) { noContentScriptMsg(); return; }
       if (!res) { showToast("Gagal scan. Reload halaman dulu."); return; }
 
       allMediaData = res;
