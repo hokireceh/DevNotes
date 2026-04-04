@@ -1,0 +1,512 @@
+(function(require, requireNative, loadScript, exports, console, privates, apiBridge, bindingUtil, getInternalApi, $Array, $Function, $JSON, $Object, $RegExp, $String, $Error, $Promise) {'use strict';// Copyright 2019 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Custom binding for the action API.
+
+const getSetIconHandler = require('setIcon').getSetIconHandler;
+
+apiBridge.registerCustomHook(function(bindingsAPI) {
+  const apiFunctions = bindingsAPI.apiFunctions;
+
+  apiFunctions.setHandleRequest('setIcon', getSetIconHandler('action.setIcon'));
+});
+
+})
+
+
+(function(require, requireNative, loadScript, exports, console, privates, apiBridge, bindingUtil, getInternalApi, $Array, $Function, $JSON, $Object, $RegExp, $String, $Error, $Promise) {'use strict';// Copyright 2013 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Custom binding for the Identity API.
+
+apiBridge.registerCustomHook(function(binding, id, contextType) {
+  const apiFunctions = binding.apiFunctions;
+
+  apiFunctions.setHandleRequest('getRedirectURL', function(path) {
+    if (path === null || path === undefined) {
+      path = '/';
+    } else {
+      path = String(path);
+    }
+    if (path[0] !== '/') {
+      path = '/' + path;
+    }
+    return 'https://' + id + '.chromiumapp.org' + path;
+  });
+});
+
+})
+
+(function(require, requireNative, loadScript, exports, console, privates, apiBridge, bindingUtil, getInternalApi, $Array, $Function, $JSON, $Object, $RegExp, $String, $Error, $Promise) {'use strict';// Copyright 2014 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+var inServiceWorker = requireNative('utils').isInServiceWorker();
+
+// Compute a scaling factor for the image based on the supplied
+// image specification.
+function computeScaleFactor(imageSpec, img) {
+  var scaleFactor = 1;
+  if (imageSpec.width && imageSpec.width < img.width)
+    scaleFactor = imageSpec.width / img.width;
+
+  if (imageSpec.height && imageSpec.height < img.height) {
+    var heightScale = imageSpec.height / img.height;
+    if (heightScale < scaleFactor)
+      scaleFactor = heightScale;
+  }
+  return scaleFactor;
+}
+
+function loadImageDataForServiceWorker(imageSpec, callbacks) {
+  var path = imageSpec.path;
+  let fetchPromise = fetch(path);
+
+  let blobPromise = $Promise.then(fetchPromise, (response) => {
+    if (!response.ok)
+      throw $Error.self({ problem: 'could_not_load', path: path });
+
+    return response.blob();
+  });
+
+  let imagePromise = $Promise.then(blobPromise, (blob) => {
+    return createImageBitmap(blob);
+  });
+
+  let imageDataPromise = $Promise.then(imagePromise, (image) => {
+    if (image.width <= 0 || image.height <= 0)
+      throw $Error.self({ problem: 'image_size_invalid', path: path});
+
+    var scaleFactor = computeScaleFactor(imageSpec, image);
+    var canvas = new OffscreenCanvas(image.width * scaleFactor,
+                                     image.height * scaleFactor);
+
+    var canvasContext = canvas.getContext('2d');
+    canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+    canvasContext.drawImage(image, 0, 0, canvas.width, canvas.height);
+    try {
+      var imageData = canvasContext.getImageData(
+          0, 0, canvas.width, canvas.height);
+      if (typeof callbacks.oncomplete === 'function') {
+        callbacks.oncomplete(
+            imageData.width, imageData.height, imageData.data.buffer);
+      }
+    } catch (e) {
+      throw $Error.self({ problem: 'data_url_unavailable', path: path });
+    }
+  });
+
+  $Promise.catch(imageDataPromise, function(error) {
+    if (typeof callbacks.onerror === 'function')
+      callbacks.onerror(error);
+  });
+}
+
+// This function takes an object |imageSpec| with the key |path| -
+// corresponding to the internet URL to be translated - and optionally
+// |width| and |height| which are the maximum dimensions to be used when
+// converting the image.
+function loadImageDataForNonServiceWorker(imageSpec, callbacks) {
+  var path = imageSpec.path;
+  var img = new Image();
+  if (typeof callbacks.onerror === 'function') {
+    img.onerror = function() {
+      callbacks.onerror({ problem: 'could_not_load', path: path });
+    };
+  }
+  img.onload = function() {
+    var canvas = document.createElement('canvas');
+
+    if (img.width <= 0 || img.height <= 0) {
+      callbacks.onerror({ problem: 'image_size_invalid', path: path});
+      return;
+    }
+
+    var scaleFactor = computeScaleFactor(imageSpec, img);
+    canvas.width = img.width * scaleFactor;
+    canvas.height = img.height * scaleFactor;
+
+    var canvas_context = canvas.getContext('2d');
+    canvas_context.clearRect(0, 0, canvas.width, canvas.height);
+    canvas_context.drawImage(img, 0, 0, canvas.width, canvas.height);
+    try {
+      var imageData = canvas_context.getImageData(
+          0, 0, canvas.width, canvas.height);
+      if (typeof callbacks.oncomplete === 'function') {
+        callbacks.oncomplete(
+            imageData.width, imageData.height, imageData.data.buffer);
+      }
+    } catch (e) {
+      if (typeof callbacks.onerror === 'function') {
+        callbacks.onerror({ problem: 'data_url_unavailable', path: path });
+      }
+    }
+  }
+  img.src = path;
+}
+
+function loadImageData(imageSpec, callbacks) {
+  if (inServiceWorker) {
+    loadImageDataForServiceWorker(imageSpec, callbacks);
+  } else {
+    loadImageDataForNonServiceWorker(imageSpec, callbacks);
+  }
+}
+
+function on_complete_index(index, err, loading, finished, callbacks) {
+  return function(width, height, imageData) {
+    delete loading[index];
+    finished[index] = { width: width, height: height, data: imageData };
+    if (err)
+      callbacks.onerror(index);
+    if ($Object.keys(loading).length == 0)
+      callbacks.oncomplete(finished);
+  }
+}
+
+function loadAllImages(imageSpecs, callbacks) {
+  var loading = {}, finished = [],
+      index, pathname;
+
+  for (var index = 0; index < imageSpecs.length; index++) {
+    loading[index] = imageSpecs[index];
+    loadImageData(imageSpecs[index], {
+      oncomplete: on_complete_index(index, false, loading, finished, callbacks),
+      onerror: on_complete_index(index, true, loading, finished, callbacks)
+    });
+  }
+}
+
+function smellsLikeImageData(imageData) {
+  // See if this object at least looks like an ImageData element.
+  // Unfortunately, we cannot use instanceof because the ImageData
+  // constructor is not public.
+  //
+  // We do this manually instead of using JSONSchema to avoid having these
+  // properties show up in the doc.
+  return (typeof imageData == 'object') && ('width' in imageData) &&
+         ('height' in imageData) && ('data' in imageData);
+}
+
+function verifyImageData(imageData) {
+  if (!smellsLikeImageData(imageData)) {
+    throw new Error(
+        'The imageData property must contain an ImageData object or' +
+        ' dictionary of ImageData objects.');
+  }
+}
+
+exports.$set('loadImageData', loadImageData);
+exports.$set('loadAllImages', loadAllImages);
+exports.$set('smellsLikeImageData', smellsLikeImageData);
+exports.$set('verifyImageData', verifyImageData);
+
+})
+
+
+(function(require, requireNative, loadScript, exports, console, privates, apiBridge, bindingUtil, getInternalApi, $Array, $Function, $JSON, $Object, $RegExp, $String, $Error, $Promise) {'use strict';// Copyright 2014 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+const exceptionHandler = require('uncaught_exception_handler');
+const imageUtil = require('imageUtil');
+const SetIconCommon = requireNative('setIcon').SetIconCommon;
+const inServiceWorker = requireNative('utils').isInServiceWorker();
+
+function loadImagePathForServiceWorker(path, callback, failureCallback) {
+  let fetchPromise = fetch(path);
+
+  let blobPromise = $Promise.then(fetchPromise, (response) => {
+    if (!response.ok) {
+      // This error is caught below.
+      throw $Error.self('Response from fetching icon not ok.');
+    }
+    return response.blob();
+  });
+
+  let imagePromise = $Promise.then(blobPromise, (blob) => {
+    return createImageBitmap(blob);
+  });
+
+  let imageDataPromise = $Promise.then(imagePromise, (image) => {
+    var canvas = new OffscreenCanvas(image.width, image.height);
+    var canvasContext = canvas.getContext('2d');
+    canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+    canvasContext.drawImage(image, 0, 0, canvas.width, canvas.height);
+    var imageData = canvasContext.getImageData(0, 0, canvas.width,
+                                               canvas.height);
+    callback(imageData);
+  });
+
+  $Promise.catch(imageDataPromise, function(error) {
+    var message = `Failed to set icon '${path}': ` +
+        exceptionHandler.safeErrorToString(error, true);
+    failureCallback(message);
+  });
+}
+
+function loadImagePathForNonServiceWorker(path, callback, failureCallback) {
+  var img = new Image();
+  img.onerror = function() {
+    var message = 'Could not load action icon \'' + path + '\'.';
+    console.error(message);
+    failureCallback(message);
+  };
+  img.onload = function() {
+    var canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height
+    var canvasContext = canvas.getContext('2d');
+    canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+    canvasContext.drawImage(img, 0, 0, canvas.width, canvas.height);
+    var imageData = canvasContext.getImageData(0, 0, canvas.width,
+                                               canvas.height);
+    callback(imageData);
+  };
+  img.src = path;
+}
+
+function loadImagePath(path, callback, failureCallback) {
+  if (inServiceWorker) {
+    loadImagePathForServiceWorker(path, callback, failureCallback);
+  } else {
+    loadImagePathForNonServiceWorker(path, callback, failureCallback);
+  }
+}
+
+/**
+ * Normalizes |details| to a format suitable for sending to the browser,
+ * for example converting ImageData to a binary representation.
+ *
+ * @param {ImageDetails} details
+ *   The ImageDetails passed into an extension action-style API.
+ * @param {Function} callback
+ *   The callback function to pass processed imageData back to. Note that this
+ *   callback may be called reentrantly.
+ * @param {Function} failureCallback
+ *   The callback function to be called in case of an error.
+ */
+function setIcon(details, callback, failureCallback) {
+  // NOTE: |details| should already have gone through API argument validation,
+  // and, as part of that, will be a null-proto'd object. As such, it's safer
+  // to directly access and manipulate fields.
+
+  // Note that iconIndex is actually deprecated, and only available to the
+  // pageAction API.
+  // TODO(kalman): Investigate whether this is for the pageActions API, and if
+  // so, delete it.
+  if ('iconIndex' in details) {
+    callback(details);
+    return;
+  }
+
+  if ('imageData' in details) {
+    if (imageUtil.smellsLikeImageData(details.imageData)) {
+      var imageData = details.imageData;
+      details.imageData = {__proto__: null};
+      details.imageData[imageData.width.toString()] = imageData;
+    } else if (typeof details.imageData == 'object' &&
+               Object.getOwnPropertyNames(details.imageData).length !== 0) {
+      for (var sizeKey in details.imageData) {
+        imageUtil.verifyImageData(details.imageData[sizeKey]);
+      }
+    } else {
+      imageUtil.verifyImageData(false);
+    }
+
+    callback(SetIconCommon(details));
+    return;
+  }
+
+  if ('path' in details) {
+    if (typeof details.path == 'object') {
+      details.imageData = {__proto__: null};
+      var detailKeyCount = 0;
+      for (var iconSize in details.path) {
+        ++detailKeyCount;
+        loadImagePath(
+            details.path[iconSize],
+            function(size, imageData) {
+              details.imageData[size] = imageData;
+              if (--detailKeyCount == 0) {
+                callback(SetIconCommon(details));
+              }
+            }.bind(null, iconSize),
+            function(errorMessage) {
+              if (failureCallback) {
+                failureCallback(errorMessage);
+                // Only report the first error.
+                failureCallback = null;
+              }
+            });
+      }
+      if (detailKeyCount == 0) {
+        throw new Error('The path property must not be empty.');
+      }
+    } else if (typeof details.path == 'string') {
+      details.imageData = {__proto__: null};
+      loadImagePath(details.path, function(imageData) {
+        details.imageData[imageData.width.toString()] = imageData;
+        delete details.path;
+        callback(SetIconCommon(details));
+      }, failureCallback);
+    }
+    return;
+  }
+  throw new Error('Either the path or imageData property must be specified.');
+}
+
+// Returns a common handler function used by several extension APIs when setting
+// the extension icon.
+function getSetIconHandler(methodName) {
+  return function(details, successCallback, failureCallback) {
+    var onIconRetrieved = function(iconSpec) {
+      bindingUtil.sendRequest(
+          methodName, [iconSpec, successCallback],
+          /*options=*/ undefined);
+    };
+    setIcon(details, onIconRetrieved, failureCallback);
+  };
+}
+
+// TODO(crbug.com/41159896): The setIcon export is only used by the declarative
+// content custom bindings and it actually has some major problems with how it
+// uses it. When that is resolved we can likely remove this export.
+exports.$set('setIcon', setIcon);
+exports.$set('getSetIconHandler', getSetIconHandler);
+
+})
+
+
+(function(require, requireNative, loadScript, exports, console, privates, apiBridge, bindingUtil, getInternalApi, $Array, $Function, $JSON, $Object, $RegExp, $String, $Error, $Promise) {'use strict';// Copyright 2014 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Handles uncaught exceptions thrown by extensions. By default this is to
+// log an error message, but tests may override this behaviour.
+var handler = function(message, e) {
+  console.error(message);
+};
+
+/**
+ * Formats the error message and invokes the error handler.
+ *
+ * @param {string} message - Error message prefix.
+ * @param {Error|*} e - Thrown object.
+ * @param {string=} priorStackTrace - Error message suffix.
+ * @see formatErrorMessage
+ */
+function handle(message, e, priorStackTrace) {
+  message = formatErrorMessage(message, e, priorStackTrace);
+  handler(message, e);
+}
+
+// Runs a user-supplied callback safely.
+function safeCallbackApply(name, callback, args, priorStackTrace) {
+  try {
+    $Function.apply(callback, null, args);
+  } catch (e) {
+    handle('Error in response to ' + name, e, priorStackTrace);
+  }
+}
+
+/**
+ * Append the error description and stack trace to |message|.
+ *
+ * @param {string} message - The prefix of the error message.
+ * @param {Error|*} e - The thrown error object. This object is potentially
+ *   unsafe, because it could be generated by an extension.
+ * @param {string=} priorStackTrace - The stack trace to be appended to the
+ *   error message. This stack trace must not include stack frames of |e.stack|,
+ *   because both stack traces are concatenated. Overlapping stack traces will
+ *   confuse extension developers.
+ * @return {string} The formatted error message.
+ */
+function formatErrorMessage(message, e, priorStackTrace) {
+  if (e) {
+    message += ': ' + safeErrorToString(e, false);
+  }
+
+  var stack;
+  try {
+    // If the stack was set, use it.
+    // |e.stack| could be void in the following common example:
+    // throw "Error message";
+    stack = $String.self(e && e.stack);
+  } catch (e) {}
+
+  // If a stack is not provided, capture a stack trace.
+  if (!priorStackTrace && !stack) {
+    stack = getStackTrace();
+  }
+
+  stack = filterExtensionStackTrace(stack);
+  if (stack) {
+    message += '\n' + stack;
+  }
+
+  // If an asynchronous stack trace was set, append it.
+  if (priorStackTrace) {
+    message += '\n' + priorStackTrace;
+  }
+
+  return message;
+}
+
+function filterExtensionStackTrace(stack) {
+  if (!stack) {
+    return '';
+  }
+  // Remove stack frames in the stack trace that weren't associated with the
+  // extension, to not confuse extension developers with internal details.
+  stack = $String.split(stack, '\n');
+  stack = $Array.filter(stack, function(line) {
+    return $String.indexOf(line, 'chrome-extension://') >= 0;
+  });
+  return $Array.join(stack, '\n');
+}
+
+function getStackTrace() {
+  var e = {};
+  $Error.captureStackTrace(e, getStackTrace);
+  return e.stack;
+}
+
+function getExtensionStackTrace() {
+  return filterExtensionStackTrace(getStackTrace());
+}
+
+/**
+ * Convert an object to a string.
+ *
+ * @param {Error|*} e - A thrown object (possibly user-supplied).
+ * @param {boolean=} omitType - Whether to try to serialize |e.message| instead
+ *   of |e.toString()|.
+ * @return {string} The error message.
+ */
+function safeErrorToString(e, omitType) {
+  try {
+    return $String.self(omitType && e.message || e);
+  } catch (e) {
+    // This error is exceptional and could be triggered by
+    // throw {toString: function() { throw 'Haha' } };
+    return '(cannot get error message)';
+  }
+}
+
+exports.$set('handle', handle);
+
+// |newHandler| A function which matches |handler|.
+exports.$set('setHandler', function(newHandler) {
+  handler = newHandler;
+});
+
+exports.$set('safeCallbackApply', safeCallbackApply);
+exports.$set('getStackTrace', getStackTrace);
+exports.$set('getExtensionStackTrace', getExtensionStackTrace);
+exports.$set('safeErrorToString', safeErrorToString);
+
+})
+
