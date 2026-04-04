@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevNotes Pro</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1><img src="icons/icon48.png" style="width:28px;height:28px;vertical-align:middle;margin-right:6px;"> DevNotes Pro</h1>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="notes">📝 Catatan</button>
+        <button class="tab-btn" data-tab="emails">📧 Email</button>
+        <button class="tab-btn" data-tab="snippets">💻 Snippet</button>
+        <button class="tab-btn" data-tab="media">🎬 Media</button>
+      </div>
+    </header>
+
+    <!-- TAB: CATATAN -->
+    <div class="tab-content active" id="tab-notes">
+      <div class="input-group">
+        <input type="text" id="note-title" placeholder="Judul catatan..." />
+        <textarea id="note-body" placeholder="Isi catatan..."></textarea>
+        <div class="btn-row">
+          <select id="note-tag">
+            <option value="">🏷️ Tag</option>
+            <option value="penting">🔴 Penting</option>
+            <option value="todo">🟡 To-Do</option>
+            <option value="coding">🔵 Coding</option>
+            <option value="info">⚪ Info</option>
+          </select>
+          <button id="btn-add-note" class="btn-primary">+ Simpan</button>
+        </div>
+      </div>
+      <div class="search-row">
+        <input type="text" id="note-search" placeholder="🔍 Cari catatan..." />
+      </div>
+      <div id="notes-list" class="list"></div>
+    </div>
+
+    <!-- TAB: EMAIL -->
+    <div class="tab-content" id="tab-emails">
+      <div class="email-header">
+        <p class="info-text">Email terdeteksi di halaman ini & riwayat harian</p>
+        <button id="btn-scan-email" class="btn-primary">🔍 Scan Halaman</button>
+      </div>
+      <div class="reset-info">
+        <span>🕖 Reset otomatis jam <strong>07:00 WIB</strong></span>
+        <span id="next-reset"></span>
+      </div>
+      <h3>📌 Ditemukan di Halaman</h3>
+      <div id="emails-found" class="list">
+        <p class="empty">Klik "Scan Halaman" untuk mendeteksi email.</p>
+      </div>
+      <h3>📋 Riwayat Hari Ini</h3>
+      <div id="emails-history" class="list"></div>
+      <button id="btn-clear-emails" class="btn-danger btn-sm">🗑️ Hapus Riwayat</button>
+    </div>
+
+    <!-- TAB: SNIPPET -->
+    <div class="tab-content" id="tab-snippets">
+      <div class="input-group">
+        <input type="text" id="snip-title" placeholder="Nama snippet..." />
+        <select id="snip-lang">
+          <option value="javascript">JavaScript</option>
+          <option value="python">Python</option>
+          <option value="bash">Bash</option>
+          <option value="html">HTML</option>
+          <option value="css">CSS</option>
+          <option value="sql">SQL</option>
+          <option value="json">JSON</option>
+          <option value="other">Lainnya</option>
+        </select>
+        <textarea id="snip-body" placeholder="Tempel kode di sini..."></textarea>
+        <button id="btn-add-snip" class="btn-primary">+ Simpan Snippet</button>
+      </div>
+      <div class="search-row">
+        <input type="text" id="snip-search" placeholder="🔍 Cari snippet..." />
+      </div>
+      <div id="snippets-list" class="list"></div>
+    </div>
+
+    <!-- TAB: MEDIA -->
+    <div class="tab-content" id="tab-media">
+      <div class="media-controls">
+        <div class="filter-row">
+          <button class="filter-btn active" data-filter="all">Semua</button>
+          <button class="filter-btn" data-filter="video">🎬 Video</button>
+          <button class="filter-btn" data-filter="image">🖼️ Gambar</button>
+          <button class="filter-btn" data-filter="audio">🎵 Audio</button>
+        </div>
+        <button id="btn-scan-media" class="btn-primary">🔍 Scan Media</button>
+      </div>
+      <div class="media-info-bar" id="media-info-bar">
+        <span id="media-count-text">Belum di-scan</span>
+        <span id="media-page-title" class="media-site"></span>
+      </div>
+      <div class="blob-warning hidden" id="blob-warning">
+        ⚠️ Halaman ini menggunakan blob URL (Telegram/streaming). Gambar mungkin bisa diambil, video terbatas.
+      </div>
+      <div id="media-list" class="media-grid">
+        <p class="empty">Klik "Scan Media" untuk mendeteksi video, gambar & audio di halaman ini.</p>
+      </div>
+    </div>
+
+    <footer>
+      <span id="clock"></span>
+      <span id="item-count"></span>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="chrome-mock.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

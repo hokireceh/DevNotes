@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>DevNotes Pro — Preview</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #060610;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 30px 20px;
+    }
+    .page-title {
+      color: #a78bfa;
+      font-size: 22px;
+      margin-bottom: 6px;
+    }
+    .page-sub {
+      color: #555;
+      font-size: 13px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .phone-frame {
+      border: 2px solid #2a1a5e;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(124, 58, 237, 0.3);
+    }
+    iframe {
+      display: block;
+      border: none;
+      width: 380px;
+      height: 560px;
+    }
+    .instructions {
+      margin-top: 24px;
+      background: #1a1a2e;
+      border: 1px solid #2a2a4e;
+      border-radius: 12px;
+      padding: 16px 20px;
+      max-width: 480px;
+      width: 100%;
+    }
+    .instructions h2 {
+      color: #a78bfa;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    .instructions ol {
+      padding-left: 18px;
+      color: #aaa;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+    .instructions code {
+      background: #0f0f1a;
+      color: #67e8f9;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .badge {
+      display: inline-block;
+      background: #4c1d95;
+      color: #c4b5fd;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      margin-top: 12px;
+    }
+    .download-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #7c3aed, #5b21b6);
+      color: white;
+      padding: 8px 20px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    .download-btn:hover { opacity: 0.85; }
+  </style>
+</head>
+<body>
+  <img src="/ext/icons/icon128.png" style="width:72px;height:72px;margin-bottom:8px;" alt="Logo" />
+  <h1 class="page-title">DevNotes Pro</h1>
+  <p class="page-sub">Chrome Extension — Preview Interaktif</p>
+
+  <div class="phone-frame">
+    <iframe src="/ext/popup.html" title="Extension Popup"></iframe>
+  </div>
+
+  <div class="instructions">
+    <h2>📦 Cara Install di Chrome</h2>
+    <ol>
+      <li>Download folder <code>chrome-extension/</code> dari project ini</li>
+      <li>Buka Chrome → ketik <code>chrome://extensions</code></li>
+      <li>Aktifkan <strong>Developer Mode</strong> (kanan atas)</li>
+      <li>Klik <strong>Load unpacked</strong></li>
+      <li>Pilih folder <code>chrome-extension/</code></li>
+      <li>Extension siap digunakan! ⚡</li>
+    </ol>
+    <span class="badge">Manifest V3 ✓</span>
+    <span class="badge">Chrome 88+ ✓</span>
+    <div style="margin-top:14px;">
+      <a href="/download" class="download-btn">⬇ Download Extension (.tar.gz)</a>
+    </div>
+  </div>
+</body>
+</html>
