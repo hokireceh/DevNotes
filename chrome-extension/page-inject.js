@@ -314,20 +314,73 @@
       downloadBlob(src, filename);
       return;
     }
+
+    if (typeof src !== "string") {
+      tryMseDownload(filename);
+      return;
+    }
+
+    // Blob URL dari Blob biasa (bukan MediaSource)
     if (src.startsWith("blob:")) {
       const blobRef = captured.get(src);
       if (blobRef) {
         downloadBlob(blobRef, filename);
-      } else {
-        downloadRanged(src, filename);
+        return;
       }
+      // Blob URL dari MediaSource — coba MSE chunks dulu
+      if (mseChunks.size > 0) {
+        tryMseDownload(filename);
+        return;
+      }
+      // Last resort: coba range download
+      downloadRanged(src, filename);
       return;
     }
+
     if (src.startsWith("http")) {
       downloadSegmented(src, filename);
       return;
     }
-    showProgress("❌ URL tidak dikenali", 0);
+
+    // URL tidak dikenali (mediasource:, about:blank, dll) — coba MSE
+    if (mseChunks.size > 0) {
+      tryMseDownload(filename);
+      return;
+    }
+
+    showProgress("❌ Tidak ada media yang bisa diunduh. Putar videonya dulu.", 0);
+    setTimeout(hideProgress, 3500);
+  }
+
+  // ── Download dari MSE chunks yang sudah terkumpul ──
+  function tryMseDownload(filename) {
+    if (mseChunks.size === 0) {
+      showProgress("❌ Belum ada data video. Putar video sampai selesai, lalu coba lagi.", 0);
+      setTimeout(hideProgress, 3500);
+      return;
+    }
+    // Ambil MSE entry terbesar (kemungkinan besar video utama)
+    let bestKey = null;
+    let bestSize = 0;
+    for (const [key, entry] of mseChunks.entries()) {
+      const size = entry.chunks.reduce((s, c) => s + c.byteLength, 0);
+      if (size > bestSize) { bestSize = size; bestKey = key; }
+    }
+    if (!bestKey) {
+      showProgress("❌ Data video belum cukup. Putar video lebih lama, lalu coba lagi.", 0);
+      setTimeout(hideProgress, 3500);
+      return;
+    }
+    const entry = mseChunks.get(bestKey);
+    showProgress("Menggabungkan data video...", 60);
+    const total = entry.chunks.reduce((s, c) => s + c.byteLength, 0);
+    const merged = new Uint8Array(total);
+    let off = 0;
+    for (const c of entry.chunks) { merged.set(c, off); off += c.byteLength; }
+    const mime = (entry.mime.split(";")[0].trim()) || "video/mp4";
+    const blob = new Blob([merged], { type: mime });
+    showProgress(`✅ Siap! ${(total / (1024 * 1024)).toFixed(1)} MB`, 100);
+    downloadBlob(blob, filename || "telegram_video_" + Date.now() + ".mp4");
     setTimeout(hideProgress, 2500);
   }
 
@@ -357,11 +410,22 @@
       e.preventDefault();
       if (btn.classList.contains("loading")) return;
 
-      const src = getUrl();
-      if (!src) { alert("URL tidak ditemukan. Pastikan media sudah dimuat."); return; }
-
       btn.classList.add("loading");
       btn.innerHTML = "⏳ Memulai...";
+
+      const src = getUrl();
+
+      // Jika tidak ada URL langsung, coba MSE (video streaming Telegram)
+      if (!src) {
+        if (mseChunks.size > 0) {
+          tryMseDownload(filename);
+        } else {
+          showProgress("⚠️ Putar video terlebih dahulu agar data terkumpul, lalu coba lagi.", 0);
+          setTimeout(hideProgress, 4000);
+        }
+        setTimeout(() => { btn.classList.remove("loading"); btn.innerHTML = "⬇ Download"; }, 3000);
+        return;
+      }
 
       smartDownload(src, filename);
 
