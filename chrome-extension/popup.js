@@ -8,15 +8,17 @@ let allMediaData = {
   blobCaptures: [], mseCaptures: [], directUrls: []
 };
 
-function showTab(name) {
+function showTab(name, silent = false) {
   $$(".tab-btn").forEach((b) => b.classList.remove("active"));
   $$(".tab-content").forEach((c) => c.classList.remove("active"));
   document.querySelector(`[data-tab="${name}"]`).classList.add("active");
   $(`#tab-${name}`).classList.add("active");
   activeTab = name;
+  try { localStorage.setItem("devnotes_lasttab", name); } catch(e) {}
   if (name === "notes") renderNotes();
-  if (name === "emails") renderEmails();
+  if (name === "emails") { renderEmails(); doScanEmails(silent); }
   if (name === "snippets") renderSnippets();
+  if (name === "media") doScanMedia(silent);
 }
 
 $$(".tab-btn").forEach((btn) => {
@@ -158,14 +160,20 @@ function renderEmails() {
   });
 }
 
-$("#btn-scan-email").addEventListener("click", () => {
+function doScanEmails(silent = true) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) return;
+    const url = tabs[0].url || "";
+    if (url.startsWith("chrome://") || url.startsWith("about:") || url === "") return;
     safeSendToTab(tabs[0].id, { type: "SCAN_EMAILS" }, (res, err) => {
-      if (err) { noContentScriptMsg(); return; }
+      if (err) return;
       const emails = res?.emails || [];
       const found = $("#emails-found");
-      if (!emails.length) { found.innerHTML = '<p class="empty">Tidak ada email ditemukan.</p>'; return; }
+      if (!found) return;
+      if (!emails.length) {
+        found.innerHTML = '<p class="empty">Tidak ada email ditemukan di halaman ini.</p>';
+        return;
+      }
       found.innerHTML = emails.map((e) => `<div class="email-card">
         <span class="email-addr">${escHtml(e)}</span>
         <button class="btn-copy" data-copy="${escHtml(e)}">📋 Copy</button>
@@ -176,10 +184,12 @@ $("#btn-scan-email").addEventListener("click", () => {
         if (chrome.runtime.lastError) {}
         renderEmails();
       });
-      showToast(`${emails.length} email ditemukan`);
+      if (!silent) showToast(`${emails.length} email ditemukan`);
     });
   });
-});
+}
+
+$("#btn-scan-email").addEventListener("click", () => doScanEmails(false));
 
 $("#btn-clear-emails").addEventListener("click", () => {
   chrome.storage.local.set({ emailHistory: [], emailHistoryDate: null }, () => {
@@ -466,23 +476,34 @@ chrome.runtime.onMessage.addListener((msg) => {
       document.body.removeChild(a);
       showToast("Download dimulai!");
     }
+    // Auto-refresh media list when new download arrives
+    if (activeTab === "media") setTimeout(() => doScanMedia(true), 1200);
   }
 });
 
-$("#btn-scan-media").addEventListener("click", () => {
+let _scanMediaBusy = false;
+function doScanMedia(silent = true) {
+  if (_scanMediaBusy) return;
   const btn = $("#btn-scan-media");
-  btn.textContent = "⏳ Scanning...";
-  btn.disabled = true;
+  if (!silent && btn) { btn.textContent = "⏳ Scanning..."; btn.disabled = true; }
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]) { btn.textContent = "🔍 Scan Media"; btn.disabled = false; return; }
+    if (!tabs[0]) {
+      if (btn) { btn.textContent = "🔍 Scan Media"; btn.disabled = false; }
+      return;
+    }
+    const url = tabs[0].url || "";
+    if (url.startsWith("chrome://") || url.startsWith("about:") || url === "") {
+      if (btn) { btn.textContent = "🔍 Scan Media"; btn.disabled = false; }
+      return;
+    }
 
+    _scanMediaBusy = true;
     safeSendToTab(tabs[0].id, { type: "SCAN_MEDIA" }, (res, err) => {
-      btn.textContent = "🔍 Scan Media";
-      btn.disabled = false;
+      _scanMediaBusy = false;
+      if (btn) { btn.textContent = "🔍 Scan Media"; btn.disabled = false; }
 
-      if (err) { noContentScriptMsg(); return; }
-      if (!res) { showToast("Gagal scan. Reload halaman dulu."); return; }
+      if (err || !res) return;
 
       allMediaData = res;
       const total = res.videos.length + res.images.length + res.audios.length +
@@ -495,22 +516,29 @@ $("#btn-scan-media").addEventListener("click", () => {
       if (res.mseCaptures?.length) parts.push(`${res.mseCaptures.length} stream`);
       if (res.blobCaptures?.length) parts.push(`${res.blobCaptures.length} blob`);
 
-      $("#media-count-text").textContent = parts.join(" · ") || "Tidak ada";
-      $("#media-page-title").textContent = truncUrl(tabs[0].url || "");
+      const countEl = $("#media-count-text");
+      if (countEl) countEl.textContent = parts.join(" · ") || "Tidak ada";
+      const titleEl = $("#media-page-title");
+      if (titleEl) titleEl.textContent = truncUrl(tabs[0].url || "");
 
       const warn = $("#blob-warning");
-      if (res.hasBlob || res.mseCaptures?.length) warn.classList.remove("hidden");
-      else warn.classList.add("hidden");
+      if (warn) {
+        if (res.hasBlob || res.mseCaptures?.length) warn.classList.remove("hidden");
+        else warn.classList.add("hidden");
+      }
 
       if (total === 0) {
-        $("#media-list").innerHTML = '<p class="empty">Tidak ada media. Putar video dulu di halaman, lalu scan kembali.</p>';
+        const list = $("#media-list");
+        if (list) list.innerHTML = '<p class="empty">Tidak ada media. Putar video dulu di halaman.</p>';
       } else {
         renderMediaList();
-        showToast(`${total} media ditemukan`);
+        if (!silent) showToast(`${total} media ditemukan`);
       }
     });
   });
-});
+}
+
+$("#btn-scan-media").addEventListener("click", () => doScanMedia(false));
 
 // ──────────────────────────────────────────────
 //  HELPERS
@@ -527,5 +555,16 @@ function truncUrl(url) {
   try { return new URL(url).hostname; } catch { return String(url).slice(0, 30); }
 }
 
-// Init
+// ── Init: restore tab terakhir & auto-scan ──
 renderNotes();
+setTimeout(() => {
+  try {
+    const lastTab = localStorage.getItem("devnotes_lasttab") || "notes";
+    const validTabs = ["notes", "emails", "snippets", "media"];
+    if (lastTab !== "notes" && validTabs.includes(lastTab)) {
+      showTab(lastTab, true); // silent auto-scan
+    } else if (lastTab === "notes") {
+      renderNotes();
+    }
+  } catch(e) {}
+}, 150);
