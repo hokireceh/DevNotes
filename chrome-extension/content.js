@@ -161,7 +161,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "REQUEST_DOWNLOAD") {
     window.dispatchEvent(new CustomEvent("__devnotes_download_request", {
-      detail: { blobUrl: msg.blobUrl, key: msg.key }
+      detail: {
+        blobUrl: msg.blobUrl,
+        key: msg.key,
+        directUrl: msg.directUrl,
+        filename: msg.filename
+      }
     }));
     sendResponse({ ok: true });
   }

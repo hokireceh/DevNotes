@@ -305,7 +305,7 @@ function renderMediaList() {
       <div class="media-meta">
         <span class="media-label">${escHtml(d.label)}</span>
         <div class="media-actions">
-          <a class="btn-dl" href="${escHtml(d.url)}" target="_blank" download="${escHtml(d.label)}">⬇ Download</a>
+          <button class="btn-direct-dl" data-url="${escHtml(d.url)}" data-label="${escHtml(d.label)}">⬇ Download</button>
           <button class="btn-copy" data-copy="${escHtml(d.url)}">📋 URL</button>
         </div>
       </div>
@@ -388,6 +388,29 @@ function renderMediaList() {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs[0]) return;
         chrome.tabs.sendMessage(tabs[0].id, { type: "REQUEST_DOWNLOAD", blobUrl }, () => {});
+      });
+    });
+  });
+
+  // Wire direct CDN download buttons
+  list.querySelectorAll(".btn-direct-dl").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.dataset.url;
+      const label = btn.dataset.label;
+      btn.textContent = "⏳ Memulai...";
+      btn.disabled = true;
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs[0]) return;
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: "REQUEST_DOWNLOAD",
+          directUrl: url,
+          filename: label
+        }, () => {
+          setTimeout(() => {
+            btn.textContent = "⬇ Download";
+            btn.disabled = false;
+          }, 3000);
+        });
       });
     });
   });
