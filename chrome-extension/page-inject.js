@@ -9,6 +9,57 @@
   const captured = new Map();
   const mseChunks = new Map();
 
+  // ── Debug Logger ──
+  const LOG_SERVER = "https://85a6b96c-6e57-4222-91e8-998b58832a53-00-2yrg86vsyb0g9.pike.replit.dev/log";
+  let logQueue = [];
+  let flushTimer = null;
+
+  function dbg(level, tag, msg, data) {
+    const entry = { level, tag, msg, data, ts: Date.now() };
+    // Print to browser console too
+    const style = { INFO: "color:#60a5fa", OK: "color:#34d399", WARN: "color:#fbbf24", ERROR: "color:#f87171", DEBUG: "color:#a78bfa" };
+    console.log(`%c[DevNotes][${tag}] ${msg}`, style[level] || "", data !== undefined ? data : "");
+    // Queue for server
+    logQueue.push(entry);
+    if (!flushTimer) {
+      flushTimer = setTimeout(() => {
+        const batch = logQueue.splice(0);
+        flushTimer = null;
+        fetch(LOG_SERVER, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(batch)
+        }).catch(() => {});
+      }, 300);
+    }
+  }
+
+  const log = {
+    info:  (tag, msg, data) => dbg("INFO",  tag, msg, data),
+    ok:    (tag, msg, data) => dbg("OK",    tag, msg, data),
+    warn:  (tag, msg, data) => dbg("WARN",  tag, msg, data),
+    error: (tag, msg, data) => dbg("ERROR", tag, msg, data),
+    debug: (tag, msg, data) => dbg("DEBUG", tag, msg, data),
+  };
+
+  // Expose status inspector di console: window.__devnotesStatus()
+  window.__devnotesStatus = () => {
+    const mseInfo = [];
+    for (const [k, v] of mseChunks.entries()) {
+      const sz = v.chunks.reduce((s, c) => s + c.byteLength, 0);
+      mseInfo.push({ key: k, mime: v.mime, chunks: v.chunks.length, size: (sz/1024/1024).toFixed(2) + " MB" });
+    }
+    const blobInfo = [];
+    for (const [url, b] of captured.entries()) {
+      blobInfo.push({ url: url.slice(0, 60), mime: b.type, size: (b.size/1024/1024).toFixed(2) + " MB" });
+    }
+    console.table(mseInfo.length ? mseInfo : [{ info: "Belum ada MSE data" }]);
+    console.table(blobInfo.length ? blobInfo : [{ info: "Belum ada blob data" }]);
+    return { mse: mseInfo, blobs: blobInfo };
+  };
+
+  log.info("INIT", `DevNotes injected @ ${location.hostname}`, { isTelegram });
+
   // ── Style injection ──
   const style = document.createElement("style");
   style.textContent = `
@@ -120,6 +171,7 @@
 
   // ── Strategy 1: Segmented Parallel Download (for CDN/HTTP URLs) ──
   async function downloadSegmented(url, label) {
+    log.info("DOWNLOAD", "Strategi: Segmented Parallel", { url: url.slice(0, 80) });
     showProgress("Mengecek ukuran file...", 0);
     try {
       const headRes = await fetch(url, { headers: { Range: "bytes=0-" } });
@@ -130,8 +182,10 @@
       const contentType = headRes.headers.get("Content-Type") || "video/mp4";
       const acceptRanges = headRes.headers.get("Accept-Ranges");
 
+      log.debug("DOWNLOAD", "Header respons", { contentRange, contentLen, contentType, acceptRanges });
+
       if (!contentRange || acceptRanges !== "bytes") {
-        // Server doesn't support ranges — fall back to streaming download
+        log.warn("DOWNLOAD", "Server tidak support range → fallback ke streaming");
         return downloadStreaming(url, label);
       }
 
@@ -140,6 +194,7 @@
       const segCount = Math.ceil(totalSize / segSize);
       const filename = label || extractFilename(url, contentType);
 
+      log.info("DOWNLOAD", `Total: ${(totalSize/1024/1024).toFixed(2)} MB, ${segCount} segmen`, { filename });
       showProgress(`Mempersiapkan ${segCount} segmen...`, 2);
 
       // Build fetch tasks per segment
@@ -182,9 +237,11 @@
       a.href = blobUrl;
       a.download = filename;
       a.click();
+      log.ok("DOWNLOAD", `Selesai! ${(blob.size/1024/1024).toFixed(2)} MB → ${filename}`);
       showProgress("✅ Download selesai!", 100);
       setTimeout(hideProgress, 2500);
     } catch (e) {
+      log.error("DOWNLOAD", "Segmented gagal: " + e.message);
       hideProgress();
       showProgress("❌ Gagal: " + e.message, 0);
       setTimeout(hideProgress, 3500);
@@ -193,6 +250,7 @@
 
   // ── Strategy 2: Range Sequential Download (for blob/stream URLs) ──
   function downloadRanged(url, label) {
+    log.info("DOWNLOAD", "Strategi: Range Sequential", { url: url.slice(0, 80) });
     const RANGE_RE = /^bytes (\d+)-(\d+)\/(\d+)$/;
     const chunks = [];
     let offset = 0;
@@ -231,6 +289,7 @@
         const pct = ((offset / totalSize) * 100).toFixed(0);
         const mb = (offset / (1024 * 1024)).toFixed(1);
         const totalMb = (totalSize / (1024 * 1024)).toFixed(1);
+        log.debug("RANGED", `Progress ${pct}% (${mb}/${totalMb} MB)`);
         showProgress(`⬇ ${mb} MB / ${totalMb} MB`, parseInt(pct));
 
         return res.blob();
@@ -266,6 +325,7 @@
 
   // ── Strategy 3: Streaming fallback (ReadableStream) ──
   function downloadStreaming(url, label) {
+    log.info("DOWNLOAD", "Strategi: Streaming fallback", { url: url.slice(0, 80) });
     showProgress("Memulai streaming download...", 0);
     fetch(url, { credentials: "include" })
       .then(res => {
@@ -310,12 +370,16 @@
 
   // ── Smart download dispatcher ──
   function smartDownload(src, filename) {
+    log.info("SMART", "Memilih strategi...", { src: typeof src === "string" ? src.slice(0, 80) : typeof src, filename });
+
     if (src instanceof Blob) {
+      log.ok("SMART", "Tipe: Blob langsung");
       downloadBlob(src, filename);
       return;
     }
 
     if (typeof src !== "string") {
+      log.warn("SMART", "src bukan string → coba MSE", { type: typeof src });
       tryMseDownload(filename);
       return;
     }
@@ -324,37 +388,45 @@
     if (src.startsWith("blob:")) {
       const blobRef = captured.get(src);
       if (blobRef) {
+        log.ok("SMART", "Blob URL ada di cache → download langsung");
         downloadBlob(blobRef, filename);
         return;
       }
+      log.warn("SMART", "Blob URL tidak ada di cache (MediaSource?)", { mseChunks: mseChunks.size });
       // Blob URL dari MediaSource — coba MSE chunks dulu
       if (mseChunks.size > 0) {
+        log.info("SMART", "Pakai MSE chunks");
         tryMseDownload(filename);
         return;
       }
-      // Last resort: coba range download
+      log.warn("SMART", "Tidak ada MSE, coba range download");
       downloadRanged(src, filename);
       return;
     }
 
     if (src.startsWith("http")) {
+      log.ok("SMART", "HTTP URL → Segmented Parallel");
       downloadSegmented(src, filename);
       return;
     }
 
     // URL tidak dikenali (mediasource:, about:blank, dll) — coba MSE
+    log.warn("SMART", "URL tidak dikenali", { prefix: src.slice(0, 20), mseChunks: mseChunks.size });
     if (mseChunks.size > 0) {
       tryMseDownload(filename);
       return;
     }
 
+    log.error("SMART", "Tidak ada strategi yang bisa digunakan");
     showProgress("❌ Tidak ada media yang bisa diunduh. Putar videonya dulu.", 0);
     setTimeout(hideProgress, 3500);
   }
 
   // ── Download dari MSE chunks yang sudah terkumpul ──
   function tryMseDownload(filename) {
+    log.info("MSE", `Mencoba MSE download, entries: ${mseChunks.size}`);
     if (mseChunks.size === 0) {
+      log.warn("MSE", "Tidak ada MSE data");
       showProgress("❌ Belum ada data video. Putar video sampai selesai, lalu coba lagi.", 0);
       setTimeout(hideProgress, 3500);
       return;
@@ -364,9 +436,11 @@
     let bestSize = 0;
     for (const [key, entry] of mseChunks.entries()) {
       const size = entry.chunks.reduce((s, c) => s + c.byteLength, 0);
+      log.debug("MSE", `Entry ${key}: ${entry.chunks.length} chunks, ${(size/1024/1024).toFixed(2)} MB, mime: ${entry.mime}`);
       if (size > bestSize) { bestSize = size; bestKey = key; }
     }
     if (!bestKey) {
+      log.warn("MSE", "bestKey null meski mseChunks.size > 0");
       showProgress("❌ Data video belum cukup. Putar video lebih lama, lalu coba lagi.", 0);
       setTimeout(hideProgress, 3500);
       return;
@@ -379,6 +453,7 @@
     for (const c of entry.chunks) { merged.set(c, off); off += c.byteLength; }
     const mime = (entry.mime.split(";")[0].trim()) || "video/mp4";
     const blob = new Blob([merged], { type: mime });
+    log.ok("MSE", `Blob siap: ${(total/1024/1024).toFixed(2)} MB, mime: ${mime}`);
     showProgress(`✅ Siap! ${(total / (1024 * 1024)).toFixed(1)} MB`, 100);
     downloadBlob(blob, filename || "telegram_video_" + Date.now() + ".mp4");
     setTimeout(hideProgress, 2500);
@@ -505,6 +580,7 @@
         mime === "application/octet-stream" || mime.startsWith("image/")
       ) {
         captured.set(url, obj);
+        log.ok("BLOB", `Blob tertangkap: ${(obj.size/1024/1024).toFixed(2)} MB, mime: ${mime}`);
         post("blob_captured", {
           blobUrl: url,
           size: obj.size,
@@ -512,7 +588,11 @@
           kind: mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "image",
           label: guessLabel(mime, obj.size)
         });
+      } else {
+        log.debug("BLOB", `createObjectURL (tidak di-capture): mime=${mime || "unknown"}`);
       }
+    } else {
+      log.debug("BLOB", `createObjectURL dari MediaSource (bukan Blob)`);
     }
     return url;
   };
@@ -549,7 +629,10 @@
     sb._ms = this;
     if (!this._dnId) this._dnId = "mse_" + Date.now();
     if (mime.startsWith("video/") || mime.includes("mp4") || mime.includes("webm")) {
+      log.info("MSE", `SourceBuffer baru (video): ${mime}`, { key: this._dnId });
       post("mse_start", { key: this._dnId, mime });
+    } else {
+      log.debug("MSE", `SourceBuffer baru (bukan video): ${mime}`);
     }
     return sb;
   };
@@ -565,6 +648,10 @@
         const data = chunk instanceof ArrayBuffer ? chunk : chunk.buffer;
         entry.chunks.push(new Uint8Array(data));
         const totalSize = entry.chunks.reduce((s, c) => s + c.byteLength, 0);
+        // Log setiap 10 chunks agar tidak terlalu banyak
+        if (entry.chunks.length % 10 === 0) {
+          log.debug("MSE", `appendBuffer: ${entry.chunks.length} chunks, total ${(totalSize/1024).toFixed(0)} KB`, { key });
+        }
         post("mse_progress", { key, totalSize, mime: entry.mime });
       }
     } catch (e) {}
