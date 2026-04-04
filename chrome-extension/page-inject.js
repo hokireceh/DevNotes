@@ -589,14 +589,22 @@
         mime === "application/octet-stream" || mime.startsWith("image/")
       ) {
         captured.set(url, obj);
+        const blobKind = mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "image";
         log.ok("BLOB", `Blob tertangkap: ${(obj.size/1024/1024).toFixed(2)} MB, mime: ${mime}`);
         post("blob_captured", {
           blobUrl: url,
           size: obj.size,
           mime,
-          kind: mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "image",
-          label: guessLabel(mime, obj.size)
+          kind: blobKind,
+          label: guessLabel(mime, obj.size),
+          thumb: null
         });
+        // Generate thumbnail async untuk video blob
+        if (blobKind === "video") {
+          generateVideoThumb(url, (thumb) => {
+            if (thumb) post("blob_thumb", { blobUrl: url, thumb });
+          });
+        }
       } else {
         log.debug("BLOB", `createObjectURL (tidak di-capture): mime=${mime || "unknown"}`);
       }
@@ -713,6 +721,35 @@
   // ── Helpers ──
   function post(type, data) {
     window.dispatchEvent(new CustomEvent("__devnotes_media", { detail: { type, ...data } }));
+  }
+
+  function generateVideoThumb(blobUrl, callback) {
+    try {
+      const video = document.createElement("video");
+      video.muted = true;
+      video.preload = "metadata";
+      video.style.cssText = "position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;top:-9999px;left:-9999px";
+      document.body.appendChild(video);
+      const cleanup = () => { try { video.remove(); } catch(e){} };
+      const onReady = () => {
+        try {
+          const w = video.videoWidth || 320, h = video.videoHeight || 180;
+          const tw = 160, th = Math.round((h / w) * tw);
+          const canvas = document.createElement("canvas");
+          canvas.width = tw; canvas.height = th || 90;
+          canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+          const thumb = canvas.toDataURL("image/jpeg", 0.72);
+          cleanup();
+          callback(thumb.length > 100 ? thumb : null);
+        } catch(e) { cleanup(); callback(null); }
+      };
+      video.addEventListener("seeked", onReady, { once: true });
+      video.addEventListener("loadeddata", () => { video.currentTime = Math.min(1, video.duration * 0.1 || 0); }, { once: true });
+      video.addEventListener("error", () => { cleanup(); callback(null); }, { once: true });
+      video.src = blobUrl;
+      video.load();
+      setTimeout(() => { cleanup(); callback(null); }, 4000);
+    } catch(e) { callback(null); }
   }
 
   function isMediaUrl(url) {

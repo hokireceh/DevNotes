@@ -26,6 +26,11 @@ window.addEventListener("__devnotes_media", function (e) {
     if (!exists) capturedMedia.blobs.push(d);
   }
 
+  if (d.type === "blob_thumb") {
+    const existing = capturedMedia.blobs.find((b) => b.blobUrl === d.blobUrl);
+    if (existing && d.thumb) existing.thumb = d.thumb;
+  }
+
   if (d.type === "mse_start" || d.type === "mse_progress") {
     const existing = capturedMedia.mse.find((m) => m.key === d.key);
     if (existing) {

@@ -312,8 +312,11 @@ function renderMediaList() {
       html += filtered.map((b) => {
         const size = fmtSize(b.size);
         const icon = b.kind === "video" ? "🎬" : b.kind === "audio" ? "🎵" : "🖼️";
+        const thumbHtml = b.thumb
+          ? `<div class="media-thumb-wrap"><img class="media-thumb" src="${escHtml(b.thumb)}" loading="lazy"/></div>`
+          : `<div class="media-icon">${icon}</div>`;
         return `<div class="media-card">
-          <div class="media-icon">${icon}</div>
+          ${thumbHtml}
           <div class="media-meta">
             <span class="media-label">${escHtml(b.label)} ${size}</span>
             <div class="media-actions">
