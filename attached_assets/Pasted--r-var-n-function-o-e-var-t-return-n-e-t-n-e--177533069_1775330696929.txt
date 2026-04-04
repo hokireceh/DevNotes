@@ -1,0 +1,288 @@
+(r => {
+    var n = {};
+    function o(e) {
+        var t;
+        return (n[e] || (t = n[e] = {
+            i: e,
+            l: !1,
+            exports: {}
+        },
+        r[e].call(t.exports, t, t.exports, o),
+        t.l = !0,
+        t)).exports
+    }
+    o.m = r,
+    o.c = n,
+    o.d = function(e, t, r) {
+        o.o(e, t) || Object.defineProperty(e, t, {
+            enumerable: !0,
+            get: r
+        })
+    }
+    ,
+    o.r = function(e) {
+        "undefined" != typeof Symbol && Symbol.toStringTag && Object.defineProperty(e, Symbol.toStringTag, {
+            value: "Module"
+        }),
+        Object.defineProperty(e, "__esModule", {
+            value: !0
+        })
+    }
+    ,
+    o.t = function(t, e) {
+        if (1 & e && (t = o(t)),
+        8 & e)
+            return t;
+        if (4 & e && "object" == typeof t && t && t.__esModule)
+            return t;
+        var r = Object.create(null);
+        if (o.r(r),
+        Object.defineProperty(r, "default", {
+            enumerable: !0,
+            value: t
+        }),
+        2 & e && "string" != typeof t)
+            for (var n in t)
+                o.d(r, n, function(e) {
+                    return t[e]
+                }
+                .bind(null, n));
+        return r
+    }
+    ,
+    o.n = function(e) {
+        var t = e && e.__esModule ? function() {
+            return e.default
+        }
+        : function() {
+            return e
+        }
+        ;
+        return o.d(t, "a", t),
+        t
+    }
+    ,
+    o.o = function(e, t) {
+        return Object.prototype.hasOwnProperty.call(e, t)
+    }
+    ,
+    o.p = "",
+    o(o.s = 14)
+}
+)({
+    14: function(e, t, r) {
+        e.exports = r("9088")
+    },
+    9088: function(e, t) {
+        let b = {
+            info: (e, t=0) => {}
+            ,
+            error: (e, t=0) => {}
+        }
+          , f = /^bytes (\d+)-(\d+)\/(\d+)$/;
+        document.addEventListener("video_download", function(e) {
+            if ("single" == e.detail.type)
+                n(e.detail.video_src.video_url, e.detail.video_src.video_id, e.detail.video_src.page, e.detail.video_src.download_id);
+            else if ("batch" == e.detail.type) {
+                var t = e.detail.video_src;
+                for (let e = 0; e < t.length; e++)
+                    n(t[e].video_url, t[e].video_id, t[e].page, t[e].download_id)
+            }
+        });
+        let r = (e, i="", a, s) => {
+            let n = []
+              , d = 0
+              , l = null
+              , c = "mp4"
+              , u = "";
+            var t;
+            u = e.includes("stream/") ? (t = JSON.parse(decodeURIComponent(e.substring(e.indexOf("stream/") + 7).split("?")[0]))) ? t.fileName || t.location.id + "." + c : i + "." + c : e.startsWith("blob") ? e.split("/").pop() + "." + c : Math.random().toString(36).substring(2, 10) + "." + c,
+            b.info("URL: " + e, u);
+            let r = () => {
+                fetch(e, {
+                    method: "GET",
+                    headers: {
+                        Range: `bytes=${d}-`
+                    },
+                    "User-Agent": "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0"
+                }).then(e => {
+                    if (![200, 206].includes(e.status))
+                        throw new Error("Non 200/206 response was received: " + e.status);
+                    var t = e.headers.get("Content-Type").split(";")[0]
+                      , t = (c = t.split("/")[1],
+                    u = u.substring(0, u.indexOf(".") + 1) + c,
+                    e.headers.get("Content-Range").match(f))
+                      , r = parseInt(t[1])
+                      , n = parseInt(t[2])
+                      , o = parseInt(t[3]);
+                    if (r !== d)
+                        throw b.error("Gap detected between responses.", u),
+                        b.info("Last offset: " + d, u),
+                        b.info("New start offset " + t[1], u),
+                        "Gap detected between responses.";
+                    if (l && o !== l)
+                        throw b.error("Total size differs", u),
+                        "Total size differs";
+                    return d = n + 1,
+                    l = o,
+                    b.info(`Get response: ${e.headers.get("Content-Length")} bytes data from ` + e.headers.get("Content-Range"), u),
+                    b.info(`Progress: ${(100 * d / l).toFixed(0)}%`, u),
+                    "" != i && (r = new CustomEvent(i + "_video_download_progress",{
+                        detail: {
+                            video_id: i,
+                            progress: (100 * d / l).toFixed(0),
+                            page: a,
+                            download_id: s
+                        }
+                    }),
+                    document.dispatchEvent(r)),
+                    e.blob()
+                }
+                ).then(e => {
+                    n.push(e)
+                }
+                ).then( () => {
+                    if (!l)
+                        throw new Error("_total_size is NULL");
+                    (d < l ? r : () => {
+                        b.info("Finish downloading blobs", u),
+                        b.info("Concatenating blobs and downloading...", u);
+                        const e = new Blob(n,{
+                            type: "video/mp4"
+                        })
+                          , t = window.URL.createObjectURL(e)
+                          , r = (b.info("Final blob size: " + e.size + " bytes", u),
+                        document.createElement("a"));
+                        document.body.appendChild(r),
+                        r.href = t,
+                        r.download = u,
+                        r.click(),
+                        document.body.removeChild(r),
+                        window.URL.revokeObjectURL(t),
+                        b.info("Download triggered", u)
+                    }
+                    )()
+                }
+                ).catch(e => {
+                    b.error(e, u)
+                }
+                )
+            }
+            ;
+            r()
+        }
+        ;
+        async function n(n, l, c, u) {
+            if (n && n.startsWith("blob:"))
+                return r(n, l, c, u);
+            var o, i, a;
+            try {
+                let {segmentCount: e, segmentSize: r, contentSize: d, contentType: t} = await (async e => {
+                    if (!(e = await fetch(e, {
+                        headers: {
+                            Range: "bytes=0-"
+                        }
+                    })).ok)
+                        throw Error("HTTP error! Status: " + e.status);
+                    var t = parseInt(e.headers.get("Content-Range").split("/")[1], 10)
+                      , r = parseInt(e.headers.get("Content-Length"), 10)
+                      , n = e.headers.get("Content-Type");
+                    if ("bytes" !== e.headers.get("Accept-Ranges"))
+                        throw Error("Server does not support partial content (byte ranges)");
+                    return {
+                        contentType: n,
+                        segmentCount: Math.ceil(t / r),
+                        contentSize: t,
+                        segmentSize: r
+                    }
+                }
+                )(n);
+                var s = Array(e).fill(0).map( (e, t) => t * r).map( (i, a) => {
+                    let s = Math.min(i + r - 1, d - 1)
+                      , e = {
+                        Range: `bytes=${i}-` + s
+                    };
+                    return () => fetch(n, {
+                        headers: e
+                    }).then(e => {
+                        if (408 === e.status)
+                            throw Error("fetch Error", {
+                                cause: {
+                                    range: `bytes=${i}-` + s,
+                                    index: a,
+                                    response: e
+                                }
+                            });
+                        var t, r, n, o = (s / d * 100).toFixed(2);
+                        return b.info(`Progress: ${o}%`),
+                        o = o,
+                        t = l,
+                        r = c,
+                        n = u,
+                        b.info(`updateProgress: ${o},${t},${n},`),
+                        "" != t && (t = new CustomEvent(t + "_video_download_progress",{
+                            detail: {
+                                video_id: t,
+                                progress: o,
+                                page: r,
+                                download_id: n
+                            }
+                        }),
+                        document.dispatchEvent(t)),
+                        e.arrayBuffer()
+                    }
+                    )
+                }
+                )
+                  , f = ( (r, n) => {
+                    n = n.split("/")[1];
+                    try {
+                        let e, t = "";
+                        var o;
+                        return e = r.includes("progressive/") ? (t = r.split("document").slice(1)) + "." + n : (o = JSON.parse(decodeURIComponent(r.substring(r.indexOf("stream/") + 7).split("?")[0]))) ? o.fileName || o.location.id + "." + n : Math.random().toString(36).substring(2, 10) + "." + n,
+                        b.info("URL:" + e),
+                        e
+                    } catch (e) {}
+                }
+                )(n, t)
+                  , p = await (async (e, t, r) => {
+                    let n = []
+                      , o = 0;
+                    for (; o < e.length; ) {
+                        var i = e.slice(o, o + t).map(e => e());
+                        try {
+                            var a = await Promise.all(i);
+                            n.push(...a),
+                            o += t
+                        } catch (e) {
+                            if (!(e instanceof Error))
+                                throw e;
+                            r && "fetch Error" === e.message && (i = e.cause.index,
+                            o = i,
+                            (async r => new Promise( (e, t) => {
+                                setTimeout( () => {
+                                    e(null)
+                                }
+                                , r)
+                            }
+                            ))(1e3))
+                        }
+                    }
+                    return n
+                }
+                )(s, 20, "11")
+                  , g = new Blob(p,{
+                    type: t || "application/octet-stream"
+                })
+                  , h = URL.createObjectURL(g);
+                return o = h,
+                i = f,
+                (a = document.createElement("a")).href = o,
+                a.download = i,
+                void a.click()
+            } catch (e) {
+                throw e
+            }
+        }
+    }
+});
