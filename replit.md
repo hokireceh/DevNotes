@@ -40,3 +40,13 @@ preview.html         ← Halaman preview + panduan install
 - chrome.alarms (reset harian)
 - Content Script (deteksi email)
 - Vanilla JS, CSS dark theme
+
+
+# Fitur tambahan di browser console (F12)
+### Ketik di console untuk melihat status saat ini:
+
+```
+window.__devnotesStatus()
+```
+
+### Ini menampilkan tabel MSE chunks dan blob yang sudah terkumpul.

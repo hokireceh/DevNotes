@@ -329,11 +329,15 @@
   function downloadStreaming(url, label) {
     log.info("DOWNLOAD", "Strategi: Streaming fallback", { url: url.slice(0, 80) });
     showProgress("Memulai streaming download...", 0);
-    fetch(url, { credentials: "include" })
+    fetch(url, { credentials: "include", mode: "cors" })
       .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         const total = parseInt(res.headers.get("content-length") || "0");
-        const mime = res.headers.get("content-type") || "video/mp4";
+        const mime = res.headers.get("content-type")?.split(";")[0] || "video/mp4";
         const filename = label || extractFilename(url, mime);
+        log.info("DOWNLOAD", "Streaming dimulai", { total: (total/1024/1024).toFixed(2) + " MB", mime, filename });
+
+        if (!res.body) throw new Error("Response body kosong / tidak ada ReadableStream");
         const reader = res.body.getReader();
         const chunks = [];
         let received = 0;
@@ -342,31 +346,37 @@
           return reader.read().then(({ done, value }) => {
             if (done) {
               const blob = new Blob(chunks, { type: mime });
-              const blobUrl = URL.createObjectURL(blob);
+              log.ok("DOWNLOAD", `Streaming selesai! ${(blob.size/1024/1024).toFixed(2)} MB → ${filename}`);
+              const blobUrl = origCreateObjectURL(blob); // pakai original, bypass hook
               const a = document.createElement("a");
               a.href = blobUrl;
               a.download = filename;
+              a.style.display = "none";
+              document.body.appendChild(a);
               a.click();
-              setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-              showProgress("✅ Selesai!", 100);
+              setTimeout(() => { a.remove(); origRevoke(blobUrl); }, 5000);
+              showProgress("✅ Selesai! " + (blob.size/1024/1024).toFixed(1) + " MB", 100);
               setTimeout(hideProgress, 2500);
               return;
             }
             chunks.push(value);
-            received += value.length;
+            received += value.byteLength;
             const pct = total ? Math.round((received / total) * 100) : 0;
             const mb = (received / (1024 * 1024)).toFixed(1);
             const totalMb = total ? " / " + (total / (1024 * 1024)).toFixed(1) + " MB" : "";
-            showProgress(`⬇ ${mb} MB${totalMb}`, pct);
+            showProgress(`⬇ Streaming ${mb}${totalMb} MB`, pct);
             return read();
+          }).catch(e => {
+            log.error("DOWNLOAD", "Error saat baca stream: " + e.message);
+            throw e;
           });
         }
         return read();
       })
       .catch(e => {
-        hideProgress();
-        showProgress("❌ Gagal: " + e.message, 0);
-        setTimeout(hideProgress, 3500);
+        log.error("DOWNLOAD", "Streaming gagal: " + e.message, { url: url.slice(0, 80) });
+        showProgress("❌ Gagal streaming: " + e.message.slice(0, 60), 0);
+        setTimeout(hideProgress, 4000);
       });
   }
 
@@ -547,6 +557,7 @@
     ) || video.parentElement;
     if (!container) return;
 
+    const videoPrefix = isTelegram ? "telegram_video_" : "video_";
     addDownloadBtn(container, () => {
       const src = video.src || video.currentSrc;
       if (src) return src;
@@ -554,7 +565,7 @@
         if (video.src === url || video.currentSrc === url) return url;
       }
       return video.src || video.currentSrc || null;
-    }, "telegram_video_" + Date.now() + ".mp4");
+    }, videoPrefix + Date.now() + ".mp4");
   }
 
   // ── Watch image elements ──
@@ -599,29 +610,34 @@
     const url = origCreateObjectURL(obj);
     if (obj instanceof Blob) {
       const mime = obj.type || "";
-      if (
-        mime.startsWith("video/") || mime.startsWith("audio/") ||
-        mime === "application/octet-stream" || mime.startsWith("image/")
-      ) {
+      const size = obj.size || 0;
+
+      const isVideo = mime.startsWith("video/");
+      const isAudio = mime.startsWith("audio/");
+      const isOctet = mime === "application/octet-stream";
+      const isImage = mime.startsWith("image/") && !mime.includes("svg");
+
+      // Skip: SVG (UI element), blob < 10KB untuk gambar, blob < 50KB untuk audio
+      const tooSmall = (isImage && size < 10240) || (isAudio && size < 51200);
+      const isSvg = mime.includes("svg");
+
+      if ((isVideo || isAudio || isOctet || isImage) && !isSvg && !tooSmall) {
         captured.set(url, obj);
-        const blobKind = mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "image";
-        log.ok("BLOB", `Blob tertangkap: ${(obj.size/1024/1024).toFixed(2)} MB, mime: ${mime}`);
+        const blobKind = isVideo ? "video" : isAudio ? "audio" : "image";
+        log.ok("BLOB", `Blob tertangkap: ${(size/1024/1024).toFixed(2)} MB, mime: ${mime}`);
         post("blob_captured", {
           blobUrl: url,
-          size: obj.size,
+          size,
           mime,
           kind: blobKind,
-          label: guessLabel(mime, obj.size),
+          label: guessLabel(mime, size),
           thumb: null
         });
-        // Generate thumbnail async untuk video blob
         if (blobKind === "video") {
           generateVideoThumb(url, (thumb) => {
             if (thumb) post("blob_thumb", { blobUrl: url, thumb });
           });
         }
-      } else {
-        log.debug("BLOB", `createObjectURL (tidak di-capture): mime=${mime || "unknown"}`);
       }
     } else {
       log.debug("BLOB", `createObjectURL dari MediaSource (bukan Blob)`);
