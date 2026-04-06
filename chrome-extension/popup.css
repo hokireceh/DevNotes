@@ -450,14 +450,27 @@ footer {
   object-fit: cover;
 }
 
-.media-img-card .media-meta {
-  padding: 6px 8px;
-}
-
+/* Gambar tampil natural sesuai rasio asli — tidak dipotong */
 .media-img-card .media-thumb-wrap {
   width: 100%;
-  height: 90px;
+  height: auto;
+  min-height: unset;
   border-radius: 8px 8px 0 0;
+  background: #0a0a14;
+  display: block;
+  overflow: hidden;
+}
+
+.media-img-card .media-thumb {
+  width: 100%;
+  height: auto;
+  max-height: 320px;
+  object-fit: contain;
+  display: block;
+}
+
+.media-img-card .media-meta {
+  padding: 6px 8px;
 }
 
 .media-icon {
