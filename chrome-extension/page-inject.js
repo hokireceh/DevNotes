@@ -329,7 +329,7 @@
   function downloadStreaming(url, label) {
     log.info("DOWNLOAD", "Strategi: Streaming fallback", { url: url.slice(0, 80) });
     showProgress("Memulai streaming download...", 0);
-    fetch(url, { credentials: "include", mode: "cors" })
+    fetch(url)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         const total = parseInt(res.headers.get("content-length") || "0");
@@ -375,7 +375,18 @@
       })
       .catch(e => {
         log.error("DOWNLOAD", "Streaming gagal: " + e.message, { url: url.slice(0, 80) });
-        showProgress("❌ Gagal streaming: " + e.message.slice(0, 60), 0);
+        // Jika CORS/network error dan ada MSE chunks → gunakan MSE
+        if (mseChunks.size > 0) {
+          let totalKb = 0;
+          for (const [, entry] of mseChunks) totalKb += entry.chunks.reduce((s, c) => s + c.byteLength, 0) / 1024;
+          if (totalKb >= 100) {
+            log.info("DOWNLOAD", `Streaming gagal → fallback MSE (${totalKb.toFixed(0)} KB tersedia)`);
+            showProgress("↩ Fallback ke MSE chunks...", 10);
+            tryMseDownload(label);
+            return;
+          }
+        }
+        showProgress("❌ Gagal: " + e.message.slice(0, 60), 0);
         setTimeout(hideProgress, 4000);
       });
   }
@@ -416,6 +427,29 @@
     }
 
     if (src.startsWith("http")) {
+      // Validasi: skip jika URL bukan media (misal URL halaman web biasa)
+      const srcLow = src.toLowerCase();
+      const looksLikeMedia = srcLow.match(/\.(mp4|webm|m3u8|mp3|ogg|m4v|m4a|ts|mkv|avi|mov|flv)(\?|$)/) ||
+        srcLow.includes("stream") || srcLow.includes("video") || srcLow.includes("media") ||
+        srcLow.includes("cdn") || srcLow.includes("download") || srcLow.includes("file");
+      if (!looksLikeMedia) {
+        log.warn("SMART", "URL tidak terlihat seperti media, lewati", { src: src.slice(0, 80) });
+        showProgress("❌ URL bukan file media yang bisa diunduh.", 0);
+        setTimeout(hideProgress, 3000);
+        return;
+      }
+      // Cek MSE dulu — jika sudah terkumpul cukup data (> 500 KB), lebih andal dari HTTP
+      if (mseChunks.size > 0) {
+        let totalMseKb = 0;
+        for (const [, entry] of mseChunks) {
+          totalMseKb += entry.chunks.reduce((s, c) => s + c.byteLength, 0) / 1024;
+        }
+        if (totalMseKb >= 500) {
+          log.ok("SMART", `MSE sudah ada ${totalMseKb.toFixed(0)} KB → pakai MSE, skip HTTP`);
+          tryMseDownload(filename);
+          return;
+        }
+      }
       log.ok("SMART", "HTTP URL → Segmented Parallel");
       downloadSegmented(src, filename);
       return;
