@@ -160,7 +160,9 @@
         return parts + "." + ext;
       }
       if (url.startsWith("blob:")) {
-        return url.split("/").pop() + "." + ext;
+        const mime2 = mime || "video/mp4";
+        const kind = mime2.startsWith("image/") ? "telegram_photo" : "telegram_video";
+        return kind + "_" + Date.now() + "." + ext;
       }
       const pathname = new URL(url).pathname;
       const base = pathname.split("/").pop();
@@ -392,14 +394,13 @@
         downloadBlob(blobRef, filename);
         return;
       }
-      log.warn("SMART", "Blob URL tidak ada di cache (MediaSource?)", { mseChunks: mseChunks.size });
-      // Blob URL dari MediaSource — coba MSE chunks dulu
+      // Blob URL dari DOM (sebelum extension load) — coba MSE dulu, lalu range
       if (mseChunks.size > 0) {
-        log.info("SMART", "Pakai MSE chunks");
+        log.info("SMART", "Blob dari DOM + ada MSE → pakai MSE chunks");
         tryMseDownload(filename);
         return;
       }
-      log.warn("SMART", "Tidak ada MSE, coba range download");
+      log.info("SMART", "Blob dari DOM → Range Sequential", { src: src.slice(0, 60) });
       downloadRanged(src, filename);
       return;
     }
@@ -528,6 +529,17 @@
   // ── Watch video elements ──
   function attachToVideo(video) {
     if (video.dataset.devnotesAttached) return;
+
+    // Skip video thumbnail/preview kecil (< 80px) — bukan video utama
+    const w = video.videoWidth || video.offsetWidth || video.clientWidth || 0;
+    const h = video.videoHeight || video.offsetHeight || video.clientHeight || 0;
+    if (w > 0 && w < 80) return;
+    if (h > 0 && h < 80) return;
+
+    // Skip video yang tidak visible sama sekali
+    const style = window.getComputedStyle(video);
+    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return;
+
     video.dataset.devnotesAttached = "1";
 
     const container = video.closest(
@@ -560,7 +572,10 @@
     ) || img.parentElement;
     if (!container) return;
 
-    const ext = img.src.split(".").pop().split("?")[0].slice(0, 4) || "jpg";
+    const rawSrc = img.src || img.currentSrc || "";
+    const ext = rawSrc.startsWith("blob:") || rawSrc.startsWith("data:")
+      ? "jpg"
+      : rawSrc.split(".").pop().split("?")[0].replace(/[^a-zA-Z0-9]/g, "").slice(0, 4) || "jpg";
     addDownloadBtn(container, () => img.src || img.currentSrc, "telegram_photo_" + Date.now() + "." + ext);
   }
 
