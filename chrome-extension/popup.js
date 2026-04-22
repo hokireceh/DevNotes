@@ -372,9 +372,12 @@ function renderMediaList() {
         : `<a class="btn-dl" href="${safeUrl}" download="${label}" target="_blank">⬇</a>`;
 
       if (item.kind === "image" && !isBlob) {
+        // CSP MV3 default (script-src 'self') memblok inline event handler
+        // seperti onerror="...". Pakai data-attribute + addEventListener
+        // setelah render (lihat block "Wire image error fallback" di bawah).
         return `<div class="media-card media-img-card">
           <div class="media-thumb-wrap">
-            <img class="media-thumb" src="${safeUrl}" onerror="this.parentElement.innerHTML='🖼️'" loading="lazy"/>
+            <img class="media-thumb" src="${safeUrl}" data-img-fallback="1" loading="lazy"/>
           </div>
           <div class="media-meta">
             <span class="media-label">${label}</span>
@@ -460,6 +463,14 @@ function renderMediaList() {
       navigator.clipboard.writeText(btn.dataset.copy);
       showToast("URL disalin!");
     });
+  });
+
+  // Wire image error fallback (replaces blocked inline onerror)
+  list.querySelectorAll('img[data-img-fallback="1"]').forEach((img) => {
+    img.addEventListener("error", () => {
+      const wrap = img.parentElement;
+      if (wrap) wrap.innerHTML = "🖼️";
+    }, { once: true });
   });
 }
 

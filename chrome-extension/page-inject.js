@@ -170,8 +170,12 @@
         return parsed.fileName || (parsed.location?.id + "." + ext);
       }
       if (url.includes("progressive/")) {
+        // `split("document").slice(1)` returns an array. Concatenating with
+        // `+ "." + ext` would call Array#toString (comma-join), producing a
+        // garbled filename. Pick the first segment, sanitize separators.
         const parts = url.split("document").slice(1);
-        return parts + "." + ext;
+        const first = (parts[0] || "").split("?")[0].replace(/[\/\\]/g, "_");
+        return (first || "telegram_video_" + Date.now()) + "." + ext;
       }
       if (url.startsWith("blob:")) {
         const mime2 = mime || "video/mp4";
@@ -733,22 +737,36 @@
     return sb;
   };
 
+  // Cap per-MSE entry size to avoid unbounded memory growth on long-running
+  // streaming pages (e.g. multi-hour Telegram playback). When the cap is hit
+  // the chunk is still appended to the live SourceBuffer (so playback stays
+  // intact) but no longer retained in our capture buffer.
+  const MAX_MSE_BYTES_PER_ENTRY = 500 * 1024 * 1024; // 500 MB
   const origAppend = SourceBuffer.prototype.appendBuffer;
   SourceBuffer.prototype.appendBuffer = function (chunk) {
     try {
       const ms = this._ms;
       if (ms && ms._dnId) {
         const key = ms._dnId;
-        if (!mseChunks.has(key)) mseChunks.set(key, { chunks: [], mime: this.mimeType || "" });
+        if (!mseChunks.has(key)) {
+          mseChunks.set(key, { chunks: [], mime: this.mimeType || "", totalSize: 0, capped: false });
+        }
         const entry = mseChunks.get(key);
         const data = chunk instanceof ArrayBuffer ? chunk : chunk.buffer;
-        entry.chunks.push(new Uint8Array(data));
-        const totalSize = entry.chunks.reduce((s, c) => s + c.byteLength, 0);
-        // Log setiap 10 chunks agar tidak terlalu banyak
-        if (entry.chunks.length % 10 === 0) {
-          log.debug("MSE", `appendBuffer: ${entry.chunks.length} chunks, total ${(totalSize/1024).toFixed(0)} KB`, { key });
+        const chunkSize = data.byteLength;
+        if (entry.totalSize + chunkSize > MAX_MSE_BYTES_PER_ENTRY) {
+          if (!entry.capped) {
+            entry.capped = true;
+            log.warn("MSE", `Entry ${key} mencapai cap ${MAX_MSE_BYTES_PER_ENTRY/1024/1024} MB, chunk baru tidak disimpan`, { totalSize: entry.totalSize });
+          }
+        } else {
+          entry.chunks.push(new Uint8Array(data));
+          entry.totalSize += chunkSize;
+          if (entry.chunks.length % 10 === 0) {
+            log.debug("MSE", `appendBuffer: ${entry.chunks.length} chunks, total ${(entry.totalSize/1024).toFixed(0)} KB`, { key });
+          }
+          post("mse_progress", { key, totalSize: entry.totalSize, mime: entry.mime });
         }
-        post("mse_progress", { key, totalSize, mime: entry.mime });
       }
     } catch (e) {}
     return origAppend.call(this, chunk);

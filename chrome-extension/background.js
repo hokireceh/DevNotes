@@ -73,10 +73,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         timeZone: "Asia/Jakarta"
       });
 
+      // Use a Set for O(1) dedup instead of O(n) Array#find per email
+      // (overall O(n+m) vs previous O(n*m) on large incoming batches).
+      const seen = new Set(history.map((e) => e.email));
       emails.forEach((email) => {
-        const exists = history.find((e) => e.email === email);
-        if (!exists) {
+        if (!seen.has(email)) {
           history.unshift({ email, time: now, date: today });
+          seen.add(email);
         }
       });
 
