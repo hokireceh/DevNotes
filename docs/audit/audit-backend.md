@@ -1,144 +1,84 @@
 # Audit Backend — DevNotes Pro
 
 **Sesi:** 2026-04-22
-**Scope sesi ini:** `server.js`, `chrome-extension/background.js`, `chrome-extension/content.js`, `chrome-extension/manifest.json`, `chrome-extension/chrome-mock.js`
-**Belum dibaca (untuk sesi berikutnya):** `chrome-extension/popup.js`, `chrome-extension/page-inject.js`, `chrome-extension/popup.html`, `chrome-extension/popup.css`, `preview.html`
+**Scope sesi ini:** `server.js`
+**Mode:** Bulk-approval (user otorisasi semua fix sekaligus)
 
 ---
 
-## Daftar Temuan (urut prioritas)
+## Ringkasan Status
 
-| # | Severity | File | Status |
-|---|----------|------|--------|
-| 1 | Critical | `server.js` | Proposed |
-| 2 | High     | `server.js` | Backlog |
-| 3 | High     | `chrome-extension/content.js` | Backlog |
-| 4 | High     | `chrome-extension/background.js` | Backlog |
-| 5 | Medium   | `server.js` | Backlog |
-| 6 | Medium   | `chrome-extension/content.js` | Backlog |
-| 7 | Low      | `server.js` | Backlog |
+| ID | Severity | File      | Status   |
+|----|----------|-----------|----------|
+| B1 | Critical | server.js | ✅ Fixed |
+| B2 | High     | server.js | ✅ Fixed |
+| B3 | Medium   | server.js | ✅ Fixed |
+| B4 | Low      | server.js | ✅ Fixed |
+
+Semua issue Backend yang tercatat di sesi ini sudah di-fix dan kode lulus `node -c` + smoke test.
 
 ---
 
-## Issue #1 — Path Traversal di static file handler (Critical)
+## B1 — Path Traversal di static file handler (Critical) ✅
 
-- **File:** `server.js` (baris 244–261)
-- **Severity:** Critical
+- **File:** `server.js` (sebelumnya baris 244–261)
 - **Masalah:**
-  Handler statis menggabungkan `req.url` langsung ke `path.join(__dirname, ...)` tanpa normalisasi atau validasi prefix. Karena `path.join` mengevaluasi segmen `..`, request seperti `GET /../package.json`, `GET /../.git/config`, atau `GET /ext/../../etc/passwd` akan keluar dari direktori `__dirname` / `chrome-extension` dan **membaca file arbitrer di host**. Server ini di-expose lewat domain publik Replit (`0.0.0.0:5000`), jadi ini bisa dieksploitasi siapa pun yang tahu URL preview.
-
-  Bukti perilaku (statis dari kode, tanpa eksekusi):
-  - `urlPath` diambil dari `req.url.split("?")[0]` — tidak di-decode/normalize.
-  - Branch `/ext/`: `path.join(__dirname, "chrome-extension", urlPath.slice(5))` — `..` di slice akan naik di luar `chrome-extension`.
-  - Branch default: `path.join(__dirname, urlPath)` — `..` di awal akan naik di luar project root.
-  - Tidak ada cek `resolved.startsWith(allowedRoot)`.
-
-- **Sebelum:**
-  ```js
-  let filePath;
-  if (urlPath.startsWith("/ext/")) {
-    filePath = path.join(__dirname, "chrome-extension", urlPath.slice(5));
-  } else {
-    filePath = path.join(__dirname, urlPath);
-  }
-
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404, { ...corsHeaders, "Content-Type": "text/plain" });
-      res.end("Not found: " + urlPath);
-      return;
-    }
-    ...
-  });
-  ```
-
-- **Sesudah (usulan):**
-  ```js
-  // Decode & tolak segmen mencurigakan lebih awal
-  let decodedPath;
-  try {
-    decodedPath = decodeURIComponent(urlPath);
-  } catch {
-    res.writeHead(400, corsHeaders);
-    res.end("Bad path");
-    return;
-  }
-  if (decodedPath.includes("\0")) {
-    res.writeHead(400, corsHeaders);
-    res.end("Bad path");
-    return;
-  }
-
-  let baseDir, relPath;
-  if (decodedPath.startsWith("/ext/")) {
-    baseDir = path.join(__dirname, "chrome-extension");
-    relPath = decodedPath.slice(5);
-  } else {
-    baseDir = __dirname;
-    relPath = decodedPath.replace(/^\/+/, "");
-  }
-
-  const resolved = path.resolve(baseDir, relPath);
-  // Pastikan hasil resolve masih di dalam baseDir
-  const baseWithSep = baseDir.endsWith(path.sep) ? baseDir : baseDir + path.sep;
-  if (resolved !== baseDir && !resolved.startsWith(baseWithSep)) {
-    res.writeHead(403, { ...corsHeaders, "Content-Type": "text/plain" });
-    res.end("Forbidden");
-    return;
-  }
-
-  fs.readFile(resolved, (err, data) => {
-    if (err) {
-      res.writeHead(404, { ...corsHeaders, "Content-Type": "text/plain" });
-      res.end("Not found: " + urlPath);
-      return;
-    }
-    const ext = path.extname(resolved);
-    const mime = mimeTypes[ext] || "text/plain";
-    res.writeHead(200, { ...corsHeaders, "Content-Type": mime, "Cache-Control": "no-cache" });
-    res.end(data);
-  });
-  ```
-
-- **Risiko fix:**
-  - Behavior valid (load `preview.html`, `/ext/popup.html`, dll) tetap jalan karena `path.resolve` tidak mengubah path normal selama tidak ada `..`.
-  - Request yang sebelumnya “diam-diam berhasil” karena pakai `..` (tidak ada di kode kita) akan jadi `403` — risiko regresi rendah.
-  - `decodeURIComponent` pada path yang tidak valid sekarang melempar `400`, sebelumnya akan ke `fs.readFile` dan jadi `404` — perubahan kecil yang lebih aman.
+  Handler statis menggabungkan `req.url` langsung ke `path.join(__dirname, ...)` tanpa normalisasi atau validasi prefix. `path.join` mengevaluasi `..`, sehingga request seperti `GET /../package.json` atau `GET /ext/../../etc/passwd` akan keluar dari direktori yang diizinkan dan **membaca file arbitrer dari host**. Server di-bind ke `0.0.0.0:5000` dan diekspos lewat domain publik Replit.
+- **Fix:**
+  - `decodeURIComponent` + reject NUL byte di awal.
+  - Pisahkan `baseDir` (`__dirname` atau `__dirname/chrome-extension`) dan `relPath`.
+  - `path.resolve(baseDir, relPath)` lalu cek `resolved.startsWith(baseDir + sep)` (kecuali tepat sama dengan baseDir). Kalau gagal → `403 Forbidden`.
+- **Smoke test (post-fix):**
+  | Request | Hasil |
+  |---|---|
+  | `GET /` | `200` |
+  | `GET /ext/popup.html` | `200` |
+  | `GET /../package.json` | `403` |
+  | `GET /ext/../../etc/passwd` | `403` |
+  | `GET /ext/..%2f..%2fetc%2fpasswd` (URL-encoded) | `403` |
 
 ---
 
-## Backlog (belum di-propose, menunggu approval issue sebelumnya)
+## B2 — Stored XSS di `/logs` viewer (High) ✅
 
-### Issue #2 — Stored XSS di `/logs` viewer (High)
-- **File:** `server.js` (baris 192–198)
-- Field `e.level` dan `e.tag` dimasukkan ke template literal HTML tanpa escape (`class="log-${e.level}"`, `<span class="tag">${e.tag||''}</span>`). Endpoint `POST /log` menerima JSON dari sumber manapun (CORS `*`, tanpa auth), sehingga payload `{"level":"INFO\"><script>...","tag":"x","msg":"y"}` akan tereksekusi saat developer membuka `/logs`.
+- **File:** `server.js` (sebelumnya baris 192–198 di template HTML viewer)
+- **Masalah:**
+  Field `e.level`, `e.tag` di-interpolasi ke template HTML tanpa escape (`class="log-${e.level}"`, `<span class="tag">${e.tag||''}</span>`). Endpoint `POST /log` terbuka (CORS `*`, tanpa auth), jadi payload JSON `{"level":"X\"><script>...","tag":"y","msg":"z"}` akan **tereksekusi** saat developer membuka `/logs`.
+- **Fix:**
+  - Whitelist `e.level` ke `['INFO','OK','WARN','ERROR','DEBUG']` untuk dipakai di nama class. Default fallback `INFO`.
+  - `escHtml()` diterapkan ke `e.level` dan `e.tag` saat ditampilkan sebagai teks.
+  - `e.msg` dan `JSON.stringify(e.data)` sudah di-escape sebelumnya — tetap.
 
-### Issue #3 — `RegExp /g` dengan `.test()` di `findEmailsOnPage` (High)
-- **File:** `chrome-extension/content.js` (baris 57–63)
-- `emailRegex` dideklarasi sekali dengan flag `g`. Pemanggilan `emailRegex.test(el.value)` di dalam `forEach` mempertahankan `lastIndex` antar iterasi → hasil bisa flip antara `true`/`false` walau input valid. Email valid bisa terlewat secara non-deterministik.
+---
 
-### Issue #4 — Logika `scheduleResetAlarm` salah untuk timezone non-WIB (High)
-- **File:** `chrome-extension/background.js` (baris 14–34)
-- Aritmatika `wibOffset + utcOffset`, lalu `setMinutes(... + totalOffset)`, lalu `setHours(7,0,0,0)` (yang dievaluasi di local time perangkat) menghasilkan target jam yang bukan 07:00 WIB untuk user di luar zona Asia/Jakarta. Cara benar: hitung target di UTC eksplisit (`Date.UTC(...)` dengan jam `0` UTC = 07:00 WIB) atau gunakan `Intl.DateTimeFormat` dengan `timeZone: "Asia/Jakarta"`.
+## B3 — `POST /log` tanpa batas ukuran body (Medium) ✅
 
-### Issue #5 — `POST /log` tanpa batas ukuran body (Medium)
-- **File:** `server.js` (baris 52–67)
-- Body diakumulasi di string tanpa limit. Endpoint terbuka (CORS `*`) → siapa pun bisa mengirim payload besar dan menghabiskan memori proses.
+- **File:** `server.js` (handler `POST /log`)
+- **Masalah:**
+  Body diakumulasi di string tanpa batas. Endpoint terbuka → siapa pun bisa kirim payload besar dan menghabiskan memori proses (DoS).
+- **Fix:**
+  - `MAX_BODY = 256 KB`.
+  - Saat akumulasi melewati batas: balas `413 Payload too large`, set `aborted=true`, dan `req.destroy()`.
+  - Handler `req.on("end")` melakukan early-return jika `aborted`.
+- **Smoke test:** body ~400 KB → respon `413`.
 
-### Issue #6 — Scan email pakai `document.documentElement.innerHTML` (Medium)
-- **File:** `chrome-extension/content.js` (baris 58, 71)
-- Serialize seluruh DOM ke string tiap scan: mahal di halaman besar dan menangkap teks dalam `<script>`/`<style>`/atribut tersembunyi yang seharusnya bukan email user-facing.
+---
 
-### Issue #7 — `sseClients` tidak dibatasi (Low)
-- **File:** `server.js` (baris 19, 82–83)
-- `Set` koneksi SSE bisa tumbuh tanpa batas; tiap log di-`write` ke setiap client → load O(n_clients × n_logs).
+## B4 — `sseClients` tidak dibatasi jumlahnya (Low) ✅
+
+- **File:** `server.js` (handler `GET /logs-stream`)
+- **Masalah:**
+  `Set` koneksi SSE bisa tumbuh tanpa batas; tiap log di-`write` ke setiap client → load O(clients × logs), serta tiap koneksi memegang file descriptor.
+- **Fix:**
+  - `MAX_SSE = 20`. Bila penuh, server membalas `503 Too many SSE clients`.
 
 ---
 
 ## Carry-over untuk sesi berikutnya
-- Setelah issue Backend selesai, lanjut audit:
-  1. `chrome-extension/popup.js` (570 baris) — kemungkinan besar berisi logic UI + storage.
-  2. `chrome-extension/page-inject.js` (846 baris) — interceptor MSE/fetch/XHR di page context.
-  3. `chrome-extension/popup.html` & `popup.css`.
-  4. `preview.html`.
-- Re-evaluasi prioritas Backend issue #2–#7 setelah issue #1 di-resolve.
+
+Tidak ada issue Backend tersisa. Lihat juga `docs/audit/audit-extension.md` untuk lanjutan audit Chrome Extension (background.js, content.js, page-inject.js, popup.js).
+
+Calon scope berikutnya:
+- `popup.html` & `popup.css` — review accessibility / CSS.
+- `preview.html` — review HTML preview page.
+- (Tidak ada DB di proyek ini → skip "Database" stage.)
