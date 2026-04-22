@@ -10,7 +10,7 @@
   const mseChunks = new Map();
 
   // ── Debug Logger ──
-  const LOG_SERVER = "https://85a6b96c-6e57-4222-91e8-998b58832a53-00-2yrg86vsyb0g9.pike.replit.dev/log";
+  const LOG_SERVER = "https://3ad0dca7-26d1-40a2-aff8-7a37215e559e-00-3omd1bk0wgcd2.pike.replit.dev/log";
   let logQueue = [];
   let flushTimer = null;
 
