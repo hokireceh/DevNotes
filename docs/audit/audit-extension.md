@@ -268,3 +268,101 @@ backwards-compatible.
 - `manifest.json` valid JSON: ✅
 - Server smoke test: `/`, `/ext/popup.html`, `/ext/manifest.json` semua HTTP 200.
 - Tidak ada dependency baru, hanya 1 manifest permission yang memang required oleh API.
+
+---
+
+## E12 — CSP `connect-src` block + null `appendChild` di `document_start`
+
+**Severity:** High (CSP blocking) + Medium (null deref)
+**Status:** Fixed
+**File:** `chrome-extension/page-inject.js`, `chrome-extension/content.js`, `chrome-extension/background.js`
+
+### Findings
+
+Console halaman host (Instagram/Facebook):
+```
+Connecting to '...replit.dev/log' violates the following Content Security Policy
+directive: "connect-src *.instagram.com wss://edge-chat.instagram.com ...".
+The action has been blocked.
+Fetch API cannot load .../log. Refused to connect because it violates the
+document's Content Security Policy.
+Uncaught (in promise) TypeError: Failed to fetch
+Uncaught TypeError: Cannot read properties of null (reading 'appendChild')
+```
+
+### Reasoning
+
+**Issue A — CSP blocked fetch:**
+`dbg()` di `page-inject.js` POST batch log ke `LOG_SERVER` (opt-in via
+`localStorage.__devnotes_log_server`). Karena page-inject berjalan di **MAIN
+world** halaman host, fetch tunduk pada CSP `connect-src` halaman tersebut.
+Situs ketat seperti Instagram/Facebook tidak whitelist `replit.dev` →
+TypeError sebelum request sempat berangkat.
+
+**Issue B — `appendChild` null:**
+Line `document.head.appendChild(style)` dipanggil saat `page-inject.js` di-load
+oleh `content.js` pada `run_at: document_start`. Pada tahap ini `document.head`
+bisa `null` (`<head>` belum di-parse). `content.js` sendiri sudah pakai pola
+`(document.head || document.documentElement)` — `page-inject.js` belum.
+
+### Fix
+
+Sesuai [Chrome Extensions service worker docs](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers)
+("service workers run in their own context, separate from the page") dan [CSP
+spec](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP) (`connect-src` hanya
+mengikat dokumen origin):
+
+1. **page-inject.js** — `dbg()` tidak lagi `fetch()` langsung. Dispatch
+   `CustomEvent("__devnotes_log_ship", { detail: { server, batch } })` ke
+   window (cross-world via DOM event).
+2. **content.js** — listener `__devnotes_log_ship` relay ke
+   `chrome.runtime.sendMessage({ type: "SHIP_LOG", server, batch })`.
+3. **background.js** — handler `SHIP_LOG`:
+   - Validasi `server` `^https?://` only.
+   - Validasi `batch` array & non-empty.
+   - `fetch(server, { method: "POST", ... })` — service worker context, **tidak
+     tunduk page CSP**, request lolos ke replit.dev.
+4. **page-inject.js (line 146)** — `(document.head || document.documentElement).appendChild(style)`
+   meniru pola defensif `content.js`. Sama untuk `progressEl` di line 161.
+
+### Verification
+
+- `node -c` semua file: ✅
+- Smoke test endpoints `200`: ✅
+- Tidak ada permission baru (background sudah punya `host_permissions: <all_urls>`).
+- Telemetri tetap **opt-in** (E1 tidak ter-rollback).
+
+---
+
+## E13 — Modernisasi In-Page UI (progress bar + tombol download)
+
+**Severity:** N/A (UI polish, bukan security)
+**Status:** Done
+**File:** `chrome-extension/page-inject.js` (style block)
+
+### Reasoning
+
+Tombol `.devnotes-dl-btn` dan panel `.devnotes-progress` masih pakai gaya
+`#7c3aed` solid + border kotak + shadow flat — tidak konsisten dengan design
+system popup/preview yang sudah modern.
+
+### Fix
+
+Style block di-rewrite dengan token yang sama seperti popup:
+
+| Element | Sebelum | Sesudah |
+|---------|---------|---------|
+| `.devnotes-dl-btn` background | `rgba(30,30,60,0.92)` solid | Glass `rgba(17,19,30,0.85)` + `backdrop-filter: saturate(160%) blur(10px)` |
+| `.devnotes-dl-btn` border | `1px solid #7c3aed` | `1px solid rgba(124,92,255,0.35)` + `border-radius: 999px` (pill) |
+| Hover state | Flat color swap | Gradient `#7c5cff → #5b3df5` + lift `translateY(-1px)` + glow |
+| `.devnotes-progress` | Border solid + flat shadow | Glass `blur(20px)` + double-shadow + drop-in animation |
+| Progress fill | Gradient statis | Animated shimmer (`@keyframes devnotes-shimmer`) + glow |
+| Tipografi | `sans-serif` generic | Modern stack (`-apple-system`, `Segoe UI Variable`, `Inter`) + tabular-nums untuk %|
+| Z-index | `9999`/`99999` | `2147483646`/`2147483647` (max int — anti-overlap dengan modal halaman host) |
+| A11y | Tidak ada | `@media (prefers-reduced-motion: reduce)` disable animasi/transisi |
+
+### Verification
+
+- `node -c page-inject.js`: ✅
+- Tidak ubah class names / DOM structure → handler JS lama tetap bekerja.
+- Tidak tambah dependency.
