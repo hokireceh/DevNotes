@@ -246,22 +246,6 @@ const server = http.createServer((req, res) => {
   // ── Static file serving ──
   if (urlPath === "/") urlPath = "/preview.html";
 
-  if (urlPath === "/download") {
-    const file = path.join(__dirname, "devnotes-pro-extension.tar.gz");
-    if (fs.existsSync(file)) {
-      res.writeHead(200, {
-        ...corsHeaders,
-        "Content-Type": "application/gzip",
-        "Content-Disposition": 'attachment; filename="devnotes-pro-extension.tar.gz"'
-      });
-      fs.createReadStream(file).pipe(res);
-    } else {
-      res.writeHead(404, corsHeaders);
-      res.end("File not found");
-    }
-    return;
-  }
-
   // ── Decode + reject suspicious paths ──
   let decodedPath;
   try {
