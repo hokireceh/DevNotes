@@ -52,6 +52,21 @@ window.addEventListener("__devnotes_media", function (e) {
   }
 });
 
+// ─── Bridge: page-inject -> background fetch (CSP-safe log shipping) ───
+// Page MAIN world fetch is bound by host page CSP (e.g. Instagram strict
+// connect-src). Service worker has no such restriction.
+window.addEventListener("__devnotes_log_ship", function (e) {
+  const d = e && e.detail;
+  if (!d || typeof d.server !== "string" || !Array.isArray(d.batch)) return;
+  try {
+    chrome.runtime.sendMessage({
+      type: "SHIP_LOG",
+      server: d.server,
+      batch: d.batch
+    });
+  } catch {}
+});
+
 // ─── Bridge: page-inject -> background chrome.downloads ───
 // Used as a CORS-safe fallback when in-page fetch() fails.
 window.addEventListener("__devnotes_ext_download", function (e) {

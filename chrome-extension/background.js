@@ -52,6 +52,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // CSP-safe log shipping. Page MAIN world is bound by host page
+  // connect-src; service worker has its own context.
+  if (msg.type === "SHIP_LOG") {
+    const server = typeof msg.server === "string" ? msg.server : "";
+    const batch = Array.isArray(msg.batch) ? msg.batch : [];
+    if (!/^https?:\/\//i.test(server) || batch.length === 0) {
+      sendResponse({ ok: false });
+      return true;
+    }
+    fetch(server, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(batch)
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err && err.message }));
+    return true;
+  }
+
   // Bypass page-context CORS by performing the download via the
   // service worker. chrome.downloads.download uses the browser network
   // stack, not the page's fetch context.

@@ -39,11 +39,16 @@
       flushTimer = setTimeout(() => {
         const batch = logQueue.splice(0);
         flushTimer = null;
-        fetch(LOG_SERVER, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(batch)
-        }).catch(() => {});
+        // Route via content-script bridge → service worker.
+        // The page MAIN world is bound by the host page's CSP (e.g. Instagram,
+        // Facebook strict connect-src) and would block the POST. The service
+        // worker has its own context and is not subject to page CSP.
+        // Docs: https://developer.chrome.com/docs/extensions/develop/concepts/service-workers
+        try {
+          window.dispatchEvent(new CustomEvent("__devnotes_log_ship", {
+            detail: { server: LOG_SERVER, batch }
+          }));
+        } catch {}
       }, 300);
     }
   }
@@ -79,61 +84,108 @@
   style.textContent = `
     .${BTN_CLASS} {
       position: absolute;
-      z-index: 9999;
-      background: rgba(30, 30, 60, 0.92);
-      color: #a78bfa;
-      border: 1px solid #7c3aed;
-      border-radius: 6px;
-      padding: 4px 10px;
-      font-size: 12px;
-      font-weight: 600;
+      z-index: 2147483646;
+      background: rgba(17, 19, 30, 0.85);
+      color: #c4b5fd;
+      border: 1px solid rgba(124, 92, 255, 0.35);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
+            "Segoe UI", "Inter", system-ui, sans-serif;
+      letter-spacing: -0.005em;
       cursor: pointer;
-      backdrop-filter: blur(4px);
-      transition: background 0.2s, color 0.2s;
+      -webkit-backdrop-filter: saturate(160%) blur(10px);
+              backdrop-filter: saturate(160%) blur(10px);
+      transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                  background 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                  color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                  box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
       user-select: none;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 4px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      gap: 6px;
+      box-shadow:
+        0 4px 14px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
     }
-    .${BTN_CLASS}:hover { background: #7c3aed; color: #fff; }
-    .${BTN_CLASS}.loading { opacity: 0.6; cursor: not-allowed; }
+    .${BTN_CLASS}:hover {
+      background: linear-gradient(135deg, #7c5cff 0%, #5b3df5 100%);
+      color: #fff;
+      transform: translateY(-1px);
+      box-shadow:
+        0 6px 20px rgba(124, 92, 255, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+      border-color: transparent;
+    }
+    .${BTN_CLASS}:active { transform: translateY(0); }
+    .${BTN_CLASS}.loading { opacity: 0.55; cursor: not-allowed; transform: none; }
+
     .devnotes-progress {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      z-index: 99999;
-      background: rgba(15,15,26,0.95);
-      border: 1px solid #7c3aed;
-      border-radius: 10px;
-      padding: 10px 16px;
-      color: #a78bfa;
-      font-size: 13px;
-      font-family: sans-serif;
-      box-shadow: 0 4px 20px rgba(124,58,237,0.3);
-      min-width: 240px;
-      max-width: 320px;
+      bottom: 24px;
+      right: 24px;
+      z-index: 2147483647;
+      background: rgba(17, 19, 30, 0.78);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+              backdrop-filter: saturate(180%) blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 14px 18px;
+      color: #e8e9f3;
+      font: 500 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
+            "Segoe UI", "Inter", system-ui, sans-serif;
+      letter-spacing: -0.005em;
+      box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.5),
+        0 8px 24px rgba(124, 92, 255, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      min-width: 260px;
+      max-width: 340px;
+      animation: devnotes-progress-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes devnotes-progress-in {
+      from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      to   { opacity: 1; transform: translateY(0)   scale(1); }
     }
     .devnotes-progress-bar {
-      height: 5px;
-      background: #2a1a5e;
-      border-radius: 3px;
-      margin-top: 8px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 999px;
+      margin-top: 10px;
       overflow: hidden;
+      position: relative;
     }
     .devnotes-progress-fill {
       height: 100%;
-      background: linear-gradient(90deg, #7c3aed, #a78bfa);
-      transition: width 0.3s;
+      background: linear-gradient(90deg, #7c5cff 0%, #9c82ff 50%, #7c5cff 100%);
+      background-size: 200% 100%;
+      border-radius: 999px;
+      transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+      animation: devnotes-shimmer 2s linear infinite;
+      box-shadow: 0 0 8px rgba(124, 92, 255, 0.5);
+    }
+    @keyframes devnotes-shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
     }
     .devnotes-progress-pct {
       font-size: 11px;
-      color: #c4b5fd;
-      margin-top: 4px;
+      font-weight: 600;
+      color: #a0a3b8;
+      margin-top: 6px;
       text-align: right;
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .devnotes-progress { animation: none; }
+      .devnotes-progress-fill { animation: none; transition: none; }
+      .${BTN_CLASS}, .${BTN_CLASS}:hover { transition: none; transform: none; }
     }
   `;
-  document.head.appendChild(style);
+  // document.head can be null when injected at document_start before <head>
+  // exists. Fall back to documentElement, matching content.js inject pattern.
+  (document.head || document.documentElement).appendChild(style);
 
   // ── Progress UI ──
   let progressEl = null;
@@ -147,7 +199,8 @@
           <div class="devnotes-progress-fill" id="devnotes-fill" style="width:0%"></div>
         </div>
         <div class="devnotes-progress-pct" id="devnotes-pct">0%</div>`;
-      document.body.appendChild(progressEl);
+      // Defensive: body may not exist on extremely early invocations.
+      (document.body || document.documentElement).appendChild(progressEl);
     }
     const msgEl = document.getElementById("devnotes-msg");
     const fill = document.getElementById("devnotes-fill");
