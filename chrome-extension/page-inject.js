@@ -262,9 +262,33 @@
       setTimeout(hideProgress, 2500);
     } catch (e) {
       log.error("DOWNLOAD", "Segmented gagal: " + e.message);
-      hideProgress();
-      showProgress("❌ Gagal: " + e.message, 0);
-      setTimeout(hideProgress, 3500);
+      // Fallback: delegate to extension service worker (chrome.downloads).
+      // The browser network stack is not bound by page-context CORS, so this
+      // works for cross-origin CDN URLs that reject in-page fetch.
+      const filename = label || extractFilename(url, "video/mp4");
+      log.info("DOWNLOAD", "Fallback → extension downloader (chrome.downloads)", { filename });
+      showProgress("⏳ Coba lewat downloader extension...", 50);
+      const onResult = (ev) => {
+        const det = ev && ev.detail;
+        if (!det || det.url !== url) return;
+        window.removeEventListener("__devnotes_ext_download_result", onResult);
+        if (det.ok) {
+          log.ok("DOWNLOAD", "Extension downloader memulai download", { filename });
+          showProgress("✅ Download dimulai (cek bar download Chrome)", 100);
+        } else {
+          log.error("DOWNLOAD", "Extension downloader gagal: " + (det.error || "unknown"));
+          showProgress("❌ Gagal: " + (det.error || e.message), 0);
+        }
+        setTimeout(hideProgress, 3500);
+      };
+      window.addEventListener("__devnotes_ext_download_result", onResult);
+      window.dispatchEvent(new CustomEvent("__devnotes_ext_download", {
+        detail: { url, filename }
+      }));
+      // Safety: if no response in 12s, drop the listener to avoid leaks.
+      setTimeout(() => {
+        window.removeEventListener("__devnotes_ext_download_result", onResult);
+      }, 12000);
     }
   }
 

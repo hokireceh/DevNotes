@@ -52,6 +52,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Bypass page-context CORS by performing the download via the
+  // service worker. chrome.downloads.download uses the browser network
+  // stack, not the page's fetch context.
+  // Docs: https://developer.chrome.com/docs/extensions/reference/api/downloads#method-download
+  if (msg.type === "EXT_DOWNLOAD") {
+    const url = typeof msg.url === "string" ? msg.url : "";
+    if (!url || !/^https?:\/\//i.test(url)) {
+      sendResponse({ ok: false, error: "Invalid url (http/https only)" });
+      return true;
+    }
+    // Sanitize filename: strip path separators and reserved chars,
+    // cap length. chrome.downloads rejects names containing ".." segments.
+    let filename = String(msg.filename || "")
+      .replace(/[\\/:*?"<>|\r\n\t]/g, "_")
+      .replace(/^\.+/, "")
+      .slice(0, 180);
+    const opts = { url, conflictAction: "uniquify" };
+    if (filename) opts.filename = filename;
+    try {
+      chrome.downloads.download(opts, (downloadId) => {
+        const err = chrome.runtime.lastError;
+        if (err || downloadId === undefined) {
+          sendResponse({ ok: false, error: err ? err.message : "downloadId missing" });
+        } else {
+          sendResponse({ ok: true, downloadId });
+        }
+      });
+    } catch (e) {
+      sendResponse({ ok: false, error: e && e.message ? e.message : String(e) });
+    }
+    return true;
+  }
+
   if (msg.type === "ADD_EMAILS") {
     const emails = msg.emails || [];
     if (emails.length === 0) {

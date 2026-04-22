@@ -206,3 +206,65 @@ Scope: review file frontend yang belum diaudit (`popup.html`, `popup.css`, `prev
 ### File yang BELUM diaudit setelah sesi ini
 
 - Tidak ada di scope extension/backend/frontend. Project tidak punya layer Database.
+
+---
+
+## E11 — CORS `Failed to fetch` saat Segmented Download di CDN cross-origin
+
+**Severity:** High
+**Status:** Fixed
+**File:** `chrome-extension/page-inject.js`, `chrome-extension/content.js`, `chrome-extension/background.js`, `chrome-extension/manifest.json`
+
+### Findings
+
+Log produksi menunjukkan:
+```
+[OK]    SMART HTTP URL → Segmented Parallel
+[INFO]  DOWNLOAD Strategi: Segmented Parallel {"url":"https://vid.klikbokep.com/..."}
+[ERROR] DOWNLOAD Segmented gagal: Failed to fetch
+```
+
+### Reasoning
+
+`downloadSegmented` melakukan `fetch()` di **MAIN world** halaman web (lewat `page-inject.js`).
+Untuk URL yang berbeda origin dari halaman host (subdomain CDN seperti `vid.klikbokep.com`
+saat halaman host adalah `klikbokep.com`), browser tunduk pada CORS halaman.
+Server CDN tidak mengirim header `Access-Control-Allow-Origin`, sehingga fetch
+ditolak dengan `TypeError: Failed to fetch`. Tidak ada fallback — user lihat
+"❌ Gagal: Failed to fetch" tanpa solusi.
+
+### Fix
+
+Sesuai dokumentasi resmi
+[chrome.downloads.download()](https://developer.chrome.com/docs/extensions/reference/api/downloads#method-download):
+"Downloads a file, given its URL and other optional preferences." API ini berjalan
+di service worker dan menggunakan **network stack browser**, bukan fetch context
+halaman → otomatis bypass CORS halaman host.
+
+Implementasi:
+
+1. **manifest.json** — tambah permission `"downloads"` (mandatory untuk API).
+2. **background.js** — handler `EXT_DOWNLOAD`:
+   - Validasi URL `^https?://` only.
+   - Sanitasi filename: strip `\\/:*?"<>|\r\n\t`, strip leading `.`, cap 180 char
+     (mencegah path traversal di filesystem user — chrome.downloads sendiri juga
+     reject `..` segments).
+   - `chrome.downloads.download({ url, filename, conflictAction: "uniquify" })`.
+   - Async `sendResponse` (`return true`) + tangani `chrome.runtime.lastError`.
+3. **content.js** — bridge listener `__devnotes_ext_download` (page event) →
+   `chrome.runtime.sendMessage({ type: "EXT_DOWNLOAD", ... })` → balikkan
+   hasilnya via `__devnotes_ext_download_result` ke page.
+4. **page-inject.js** — di `catch` block `downloadSegmented`, dispatch
+   `__devnotes_ext_download` sebagai fallback. Listener temporary dengan
+   safety-timeout 12 detik (cegah leak listener jika service worker tidur).
+
+Tidak mengubah strategi default (Segmented tetap dicoba duluan demi kecepatan
+parallel). Fallback hanya aktif saat segmented benar-benar gagal — minimal-risk,
+backwards-compatible.
+
+### Verification
+
+- `node -c` semua file JS: ✅
+- `manifest.json` valid JSON: ✅
+- Server smoke test: `/`, `/ext/popup.html`, `/ext/manifest.json` semua HTTP 200.
+- Tidak ada dependency baru, hanya 1 manifest permission yang memang required oleh API.

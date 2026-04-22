@@ -52,6 +52,25 @@ window.addEventListener("__devnotes_media", function (e) {
   }
 });
 
+// ─── Bridge: page-inject -> background chrome.downloads ───
+// Used as a CORS-safe fallback when in-page fetch() fails.
+window.addEventListener("__devnotes_ext_download", function (e) {
+  const d = e && e.detail;
+  if (!d || typeof d.url !== "string") return;
+  chrome.runtime.sendMessage(
+    { type: "EXT_DOWNLOAD", url: d.url, filename: d.filename || "" },
+    (resp) => {
+      const lastErr = chrome.runtime.lastError;
+      const result = lastErr
+        ? { ok: false, error: lastErr.message, url: d.url }
+        : { ok: !!(resp && resp.ok), error: resp && resp.error, url: d.url };
+      window.dispatchEvent(new CustomEvent("__devnotes_ext_download_result", {
+        detail: result
+      }));
+    }
+  );
+});
+
 // ─── DOM scan (existing media elements) ───
 function findEmailsOnPage() {
   // Note: regex used only via String.prototype.match() — never .test() with /g flag
