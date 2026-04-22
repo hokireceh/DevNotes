@@ -50,9 +50,21 @@ const server = http.createServer((req, res) => {
 
   // ── POST /log — receive debug logs from extension ──
   if (req.method === "POST" && urlPath === "/log") {
+    const MAX_BODY = 256 * 1024; // 256 KB
     let body = "";
-    req.on("data", d => body += d);
+    let aborted = false;
+    req.on("data", d => {
+      if (aborted) return;
+      body += d;
+      if (body.length > MAX_BODY) {
+        aborted = true;
+        res.writeHead(413, corsHeaders);
+        res.end("Payload too large");
+        req.destroy();
+      }
+    });
     req.on("end", () => {
+      if (aborted) return;
       try {
         const entries = JSON.parse(body);
         const list = Array.isArray(entries) ? entries : [entries];
@@ -69,6 +81,12 @@ const server = http.createServer((req, res) => {
 
   // ── GET /logs — SSE stream for real-time logs ──
   if (req.method === "GET" && urlPath === "/logs-stream") {
+    const MAX_SSE = 20;
+    if (sseClients.size >= MAX_SSE) {
+      res.writeHead(503, { ...corsHeaders, "Content-Type": "text/plain" });
+      res.end("Too many SSE clients");
+      return;
+    }
     res.writeHead(200, {
       ...corsHeaders,
       "Content-Type": "text/event-stream",
@@ -189,13 +207,16 @@ const server = http.createServer((req, res) => {
     );
     document.getElementById('count').textContent = filtered.length + ' / ' + logs.length + ' logs';
     const c = document.getElementById('log-container');
-    c.innerHTML = filtered.map(e => \`
-      <div class="log-entry log-\${e.level}">
+    c.innerHTML = filtered.map(e => {
+      const safeLevel = ['INFO','OK','WARN','ERROR','DEBUG'].includes(e.level) ? e.level : 'INFO';
+      return \`
+      <div class="log-entry log-\${safeLevel}">
         <span class="ts">\${fmtTs(e.ts)}</span>
-        <span class="lvl lvl-\${e.level}">\${e.level}</span>
-        <span class="tag">\${e.tag||''}</span>
+        <span class="lvl lvl-\${safeLevel}">\${escHtml(e.level||'')}</span>
+        <span class="tag">\${escHtml(e.tag||'')}</span>
         <span class="msg">\${escHtml(e.msg)}\${e.data ? '<div class="data">'+escHtml(JSON.stringify(e.data))+'</div>' : ''}</span>
-      </div>\`).join('');
+      </div>\`;
+    }).join('');
     if(autoScroll) c.scrollTop = c.scrollHeight;
   }
 
@@ -241,20 +262,45 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let filePath;
-  if (urlPath.startsWith("/ext/")) {
-    filePath = path.join(__dirname, "chrome-extension", urlPath.slice(5));
-  } else {
-    filePath = path.join(__dirname, urlPath);
+  // ── Decode + reject suspicious paths ──
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(urlPath);
+  } catch {
+    res.writeHead(400, { ...corsHeaders, "Content-Type": "text/plain" });
+    res.end("Bad path");
+    return;
+  }
+  if (decodedPath.includes("\0")) {
+    res.writeHead(400, { ...corsHeaders, "Content-Type": "text/plain" });
+    res.end("Bad path");
+    return;
   }
 
-  fs.readFile(filePath, (err, data) => {
+  let baseDir, relPath;
+  if (decodedPath.startsWith("/ext/")) {
+    baseDir = path.join(__dirname, "chrome-extension");
+    relPath = decodedPath.slice(5);
+  } else {
+    baseDir = __dirname;
+    relPath = decodedPath.replace(/^\/+/, "");
+  }
+
+  const resolved = path.resolve(baseDir, relPath);
+  const baseWithSep = baseDir.endsWith(path.sep) ? baseDir : baseDir + path.sep;
+  if (resolved !== baseDir && !resolved.startsWith(baseWithSep)) {
+    res.writeHead(403, { ...corsHeaders, "Content-Type": "text/plain" });
+    res.end("Forbidden");
+    return;
+  }
+
+  fs.readFile(resolved, (err, data) => {
     if (err) {
       res.writeHead(404, { ...corsHeaders, "Content-Type": "text/plain" });
       res.end("Not found: " + urlPath);
       return;
     }
-    const ext = path.extname(filePath);
+    const ext = path.extname(resolved);
     const mime = mimeTypes[ext] || "text/plain";
     res.writeHead(200, { ...corsHeaders, "Content-Type": mime, "Cache-Control": "no-cache" });
     res.end(data);

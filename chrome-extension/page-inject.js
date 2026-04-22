@@ -10,17 +10,31 @@
   const mseChunks = new Map();
 
   // ── Debug Logger ──
-  const LOG_SERVER = "https://3ad0dca7-26d1-40a2-aff8-7a37215e559e-00-3omd1bk0wgcd2.pike.replit.dev/log";
+  // Remote logging is OPT-IN only. The extension MUST NOT silently exfiltrate
+  // browsing telemetry from end-user pages to any third-party server.
+  // To enable remote logging on a dev machine, run in DevTools console:
+  //   localStorage.setItem("__devnotes_log_server", "https://your-dev-host/log")
+  // To disable: localStorage.removeItem("__devnotes_log_server")
+  const LOG_SERVER = (() => {
+    try { return localStorage.getItem("__devnotes_log_server") || ""; }
+    catch { return ""; }
+  })();
+  const REMOTE_LOG_ENABLED = !!LOG_SERVER;
+  const MAX_QUEUE = 200;
   let logQueue = [];
   let flushTimer = null;
 
   function dbg(level, tag, msg, data) {
     const entry = { level, tag, msg, data, ts: Date.now() };
-    // Print to browser console too
+    // Always print to browser console
     const style = { INFO: "color:#60a5fa", OK: "color:#34d399", WARN: "color:#fbbf24", ERROR: "color:#f87171", DEBUG: "color:#a78bfa" };
     console.log(`%c[DevNotes][${tag}] ${msg}`, style[level] || "", data !== undefined ? data : "");
-    // Queue for server
+    // Only POST to remote server when explicitly opted in
+    if (!REMOTE_LOG_ENABLED) return;
     logQueue.push(entry);
+    if (logQueue.length > MAX_QUEUE) {
+      logQueue.splice(0, logQueue.length - MAX_QUEUE);
+    }
     if (!flushTimer) {
       flushTimer = setTimeout(() => {
         const batch = logQueue.splice(0);

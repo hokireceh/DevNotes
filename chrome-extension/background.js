@@ -12,25 +12,25 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 function scheduleResetAlarm() {
-  const now = new Date();
-  const wibOffset = 7 * 60;
-  const utcOffset = now.getTimezoneOffset();
-  const totalOffset = wibOffset + utcOffset;
-
-  const resetHour = 7;
-  let nextReset = new Date(now);
-  nextReset.setMinutes(nextReset.getMinutes() + totalOffset);
-  nextReset.setHours(resetHour, 0, 0, 0);
-
-  if (nextReset.getTime() <= now.getTime() + totalOffset * 60 * 1000) {
-    nextReset.setDate(nextReset.getDate() + 1);
+  // 07:00 WIB (Asia/Jakarta, UTC+7, no DST) === 00:00 UTC, every day.
+  // Compute next 00:00 UTC strictly in UTC math so this is correct
+  // regardless of the user's local device timezone.
+  const nowMs = Date.now();
+  const nowUtc = new Date(nowMs);
+  let nextResetMs = Date.UTC(
+    nowUtc.getUTCFullYear(),
+    nowUtc.getUTCMonth(),
+    nowUtc.getUTCDate(),
+    0, 0, 0, 0
+  );
+  if (nextResetMs <= nowMs) {
+    nextResetMs += 24 * 60 * 60 * 1000;
   }
 
-  const delayMs = nextReset.getTime() - (now.getTime() + totalOffset * 60 * 1000);
+  // chrome.alarms minimum in production is 30s (0.5 min)
+  const delayInMinutes = Math.max(0.5, (nextResetMs - nowMs) / 60000);
 
-  chrome.alarms.create(RESET_ALARM, {
-    delayInMinutes: delayMs / 60000
-  });
+  chrome.alarms.create(RESET_ALARM, { delayInMinutes });
 }
 
 function resetEmailHistory() {

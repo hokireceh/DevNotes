@@ -54,21 +54,26 @@ window.addEventListener("__devnotes_media", function (e) {
 
 // ─── DOM scan (existing media elements) ───
 function findEmailsOnPage() {
-  const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
-  const htmlText = document.documentElement.innerHTML || "";
+  // Note: regex used only via String.prototype.match() — never .test() with /g flag
+  // (stateful lastIndex would cause flip-flop true/false across calls)
+  const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  const matchAll = (str) => (str ? String(str).match(EMAIL_RE) || [] : []);
+
+  // innerText (visible text) instead of innerHTML to avoid scanning <script>/<style>
+  // source code and to dramatically reduce string size on large pages.
+  const sourceText = document.body ? (document.body.innerText || "") : "";
 
   const inputEmails = [];
   document.querySelectorAll('input[type="email"], input[name*="email"], input[id*="email"]').forEach((el) => {
-    if (el.value && emailRegex.test(el.value)) inputEmails.push(el.value.trim());
+    matchAll(el.value).forEach((m) => inputEmails.push(m.trim()));
   });
 
   const metaEmails = [];
   document.querySelectorAll("meta[content]").forEach((el) => {
-    const matches = el.content.match(emailRegex);
-    if (matches) metaEmails.push(...matches);
+    metaEmails.push(...matchAll(el.content));
   });
 
-  const textMatches = htmlText.match(emailRegex) || [];
+  const textMatches = matchAll(sourceText);
   const all = [...new Set([...inputEmails, ...metaEmails, ...textMatches])];
 
   return all.filter((e) => {
