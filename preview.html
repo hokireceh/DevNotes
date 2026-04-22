@@ -2,115 +2,302 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DevNotes Pro — Preview</title>
   <style>
+    :root {
+      --bg-0: #0a0b14;
+      --bg-1: #11131e;
+      --bg-2: #181a26;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --border-default: rgba(255, 255, 255, 0.10);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text-primary: #e8e9f3;
+      --text-secondary: #a0a3b8;
+      --text-tertiary: #6b6e85;
+      --text-muted: #4a4d63;
+      --accent: #7c5cff;
+      --accent-hover: #9c82ff;
+      --accent-glow: rgba(124, 92, 255, 0.35);
+      --accent-soft: rgba(124, 92, 255, 0.12);
+      --accent-gradient: linear-gradient(135deg, #7c5cff 0%, #5b3df5 100%);
+      --code-color: #67e8f9;
+      --r-md: 10px;
+      --r-lg: 14px;
+      --r-xl: 20px;
+      --r-full: 999px;
+      --t-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
+                   "Segoe UI", "Inter", system-ui, "Helvetica Neue", Arial, sans-serif;
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
     body {
-      background: #060610;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(124, 92, 255, 0.18), transparent 45%),
+        radial-gradient(circle at 85% 90%, rgba(91, 61, 245, 0.12), transparent 45%),
+        var(--bg-0);
+      background-attachment: fixed;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
-      min-height: 100vh;
-      font-family: 'Segoe UI', sans-serif;
-      padding: 30px 20px;
+      padding: 48px 20px 60px;
+      gap: 8px;
     }
+
+    .brand-mark {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      box-shadow:
+        0 12px 36px rgba(124, 92, 255, 0.45),
+        0 2px 8px rgba(0, 0, 0, 0.3);
+      animation: float 4s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-6px); }
+    }
+
     .page-title {
-      color: #a78bfa;
-      font-size: 22px;
-      margin-bottom: 6px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #c4b5fd 0%, #7c5cff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-top: 14px;
     }
+
     .page-sub {
-      color: #555;
+      color: var(--text-tertiary);
       font-size: 13px;
-      margin-bottom: 24px;
+      margin-bottom: 28px;
       text-align: center;
+      letter-spacing: -0.005em;
     }
+
     .phone-frame {
-      border: 2px solid #2a1a5e;
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 0 40px rgba(124, 58, 237, 0.3);
+      position: relative;
+      border-radius: var(--r-xl);
+      padding: 8px;
+      background:
+        linear-gradient(135deg,
+          rgba(124, 92, 255, 0.4),
+          rgba(91, 61, 245, 0.15) 40%,
+          rgba(255, 255, 255, 0.04) 80%);
+      box-shadow:
+        0 20px 60px rgba(124, 92, 255, 0.25),
+        0 8px 24px rgba(0, 0, 0, 0.5);
     }
+
+    .phone-frame::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: var(--r-xl);
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+              mask-composite: exclude;
+      pointer-events: none;
+    }
+
     iframe {
       display: block;
       border: none;
       width: 380px;
       height: 560px;
+      border-radius: 14px;
+      background: var(--bg-0);
     }
+
     .instructions {
-      margin-top: 24px;
-      background: #1a1a2e;
-      border: 1px solid #2a2a4e;
-      border-radius: 12px;
-      padding: 16px 20px;
+      margin-top: 32px;
+      background: rgba(17, 19, 30, 0.7);
+      backdrop-filter: saturate(160%) blur(14px);
+      -webkit-backdrop-filter: saturate(160%) blur(14px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--r-lg);
+      padding: 20px 24px;
       max-width: 480px;
       width: 100%;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     }
+
     .instructions h2 {
-      color: #a78bfa;
-      font-size: 14px;
-      margin-bottom: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-hover);
+      margin-bottom: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
+
+    .instructions h2::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
     .instructions ol {
-      padding-left: 18px;
-      color: #aaa;
-      font-size: 12px;
+      list-style: none;
+      counter-reset: step;
+      color: var(--text-secondary);
+      font-size: 12.5px;
       line-height: 1.8;
     }
+
+    .instructions ol li {
+      counter-increment: step;
+      padding-left: 28px;
+      position: relative;
+      padding-bottom: 4px;
+    }
+
+    .instructions ol li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 4px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent-soft);
+      border: 1px solid var(--border-default);
+      color: var(--accent-hover);
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+
     .instructions code {
-      background: #0f0f1a;
-      color: #67e8f9;
-      padding: 1px 6px;
-      border-radius: 4px;
-      font-family: monospace;
+      background: var(--bg-0);
+      color: var(--code-color);
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+      font-size: 11.5px;
+      border: 1px solid var(--border-subtle);
     }
+
+    .badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
     .badge {
-      display: inline-block;
-      background: #4c1d95;
-      color: #c4b5fd;
-      padding: 3px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      margin-top: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--accent-soft);
+      color: var(--accent-hover);
+      border: 1px solid rgba(124, 92, 255, 0.25);
+      padding: 4px 11px;
+      border-radius: var(--r-full);
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
     }
+
+    .download-row {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px dashed var(--border-subtle);
+    }
+
     .download-btn {
-      display: inline-block;
-      background: linear-gradient(135deg, #7c3aed, #5b21b6);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent-gradient);
       color: white;
-      padding: 8px 20px;
-      border-radius: 8px;
+      padding: 10px 22px;
+      border-radius: var(--r-md);
       text-decoration: none;
       font-size: 13px;
       font-weight: 600;
-      transition: opacity 0.2s;
+      letter-spacing: -0.01em;
+      box-shadow:
+        0 4px 14px var(--accent-glow),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+      transition: transform var(--t-base), filter var(--t-base), box-shadow var(--t-base);
     }
-    .download-btn:hover { opacity: 0.85; }
+
+    .download-btn:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+      box-shadow:
+        0 6px 20px var(--accent-glow),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .download-btn:active {
+      transform: translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 <body>
-  <img src="/ext/icons/icon128.png" style="width:72px;height:72px;margin-bottom:8px;" alt="Logo" />
+  <img src="/ext/icons/icon128.png" class="brand-mark" alt="DevNotes Pro" />
   <h1 class="page-title">DevNotes Pro</h1>
-  <p class="page-sub">Chrome Extension — Preview Interaktif</p>
+  <p class="page-sub">Chrome Extension · Preview Interaktif</p>
 
   <div class="phone-frame">
     <iframe src="/ext/popup.html" title="Extension Popup"></iframe>
   </div>
 
   <div class="instructions">
-    <h2>📦 Cara Install di Chrome</h2>
+    <h2>Cara Install di Chrome</h2>
     <ol>
       <li>Download folder <code>chrome-extension/</code> dari project ini</li>
-      <li>Buka Chrome → ketik <code>chrome://extensions</code></li>
-      <li>Aktifkan <strong>Developer Mode</strong> (kanan atas)</li>
-      <li>Klik <strong>Load unpacked</strong></li>
+      <li>Buka Chrome, ketik <code>chrome://extensions</code></li>
+      <li>Aktifkan <strong>Developer Mode</strong> (toggle kanan atas)</li>
+      <li>Klik tombol <strong>Load unpacked</strong></li>
       <li>Pilih folder <code>chrome-extension/</code></li>
-      <li>Extension siap digunakan! ⚡</li>
+      <li>Extension siap digunakan</li>
     </ol>
-    <span class="badge">Manifest V3 ✓</span>
-    <span class="badge">Chrome 88+ ✓</span>
-    <div style="margin-top:14px;">
-      <a href="/download" class="download-btn">⬇ Download Extension (.tar.gz)</a>
+    <div class="badges">
+      <span class="badge">Manifest V3</span>
+      <span class="badge">Chrome 88+</span>
+      <span class="badge">Zero Telemetry</span>
+    </div>
+    <div class="download-row">
+      <a href="/download" class="download-btn">
+        <span>⬇</span>
+        <span>Download Extension (.tar.gz)</span>
+      </a>
     </div>
   </div>
 </body>
